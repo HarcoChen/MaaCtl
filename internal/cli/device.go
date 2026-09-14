@@ -33,12 +33,14 @@ type desktopWindowOutput struct {
 // against.
 func newDeviceCommand(global *GlobalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "device",
-		Short: i18n.Text("Inspect devices and windows", "查看设备与窗口"),
-		Long: i18n.Text(`Devices and windows are discovered through MaaToolkit. Use this command to get
-the addresses, names, classes, and handles that run accepts.`, `设备与窗口由 MaaToolkit 发现。用本命令获取 run 所需的地址、名称、类名和句柄。`),
+		Use:     "device",
+		Aliases: []string{"dev"},
+		Short:   i18n.Text("List devices and windows", "列出设备与窗口"),
+		Long: i18n.Text(`Devices and windows are discovered through MaaToolkit. The reported addresses,
+names, classes, and handles are exactly what "run" accepts.`, `设备与窗口由 MaaToolkit 发现。这里输出的地址、名称、类名、句柄就是 "run"
+接受的取值。`),
 		Example: `  maactl device adb
-  maactl device win32 --json`,
+  maactl device win32 -j`,
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
@@ -49,13 +51,17 @@ the addresses, names, classes, and handles that run accepts.`, `设备与窗口�
 // newDeviceListCommand builds `device adb` / `device win32`.
 func newDeviceListCommand(global *GlobalOptions, kind string) *cobra.Command {
 	short := i18n.Text("List ADB devices", "列出 ADB 设备")
-	long := i18n.Text("Devices are discovered through MaaToolkit and include the address, ADB path,\nand recommended screencap and input methods.", "设备由 MaaToolkit 发现，包含地址、ADB 路径以及建议的截图和输入方式。")
+	long := i18n.Text("Reports the address, ADB path, and recommended screencap and input methods.", "报告地址、ADB 路径以及建议的截图与输入方式。")
+	alias := "a"
+	example := `  maactl device adb -j`
 	if kind == "win32" {
-		short = i18n.Text("List Win32 desktop windows", "列出 Win32 桌面窗口")
-		long = i18n.Text("Windows are discovered through MaaToolkit and include the window name, class, and handle.", "窗口由 MaaToolkit 发现，包含窗口名称、类名和句柄。")
+		short = i18n.Text("List Win32 windows", "列出 Win32 窗口")
+		long = i18n.Text("Reports the window name, class, and handle.", "报告窗口名称、类名与句柄。")
+		alias = "w"
+		example = `  maactl device win32`
 	}
 	return &cobra.Command{
-		Use: kind, Short: short, Long: long, Args: cobra.NoArgs,
+		Use: kind, Aliases: []string{alias}, Short: short, Long: long, Example: example, Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return withMaaFramework(global, func() error {
 				if kind == "adb" {

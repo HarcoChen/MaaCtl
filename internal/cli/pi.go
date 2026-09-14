@@ -18,15 +18,18 @@ import (
 func newPICommand(global *GlobalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "pi",
-		Aliases: []string{"interface"},
-		Short:   i18n.Text("Inspect and validate a ProjectInterface", "检查和验证 ProjectInterface"),
-		Long: i18n.Text(`pi reads the ProjectInterface named by --interface/-f (default: ./interface.json)
-and reports what it declares. No controller is created and no Pipeline runs, so
-these commands work without a connected device.`, `pi 读取 --interface/-f 指定的 ProjectInterface（默认：./interface.json）
-并报告其中的声明。不会创建控制器，也不会运行 Pipeline，因此不需要连接设备。`),
-		Example: `  maactl pi info -f D:\01_Projects\github\MaaMio
-  maactl pi tasks -f D:\01_Projects\github\MaaMio
-  maactl pi validate -f D:\01_Projects\github\MaaMio --json`,
+		Aliases: []string{"if", "interface"},
+		Short:   i18n.Text("Inspect the ProjectInterface", "检查 ProjectInterface"),
+		Long: i18n.Text(`Reads the ProjectInterface named by -if/--interface (default ./interface.json)
+and reports what it declares. No controller is created, so a device is not needed.
+
+Resource inspection lives in "maactl resource".`, `读取 -if/--interface 指定的 ProjectInterface（默认 ./interface.json）并报告其中
+的声明。不会创建控制器，因此不需要设备。
+
+资源检查在 "maactl resource" 下。`),
+		Example: `  maactl pi info -if D:\MaaMio
+  maactl pi t -c Android
+  maactl pi validate -st`,
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
@@ -34,7 +37,6 @@ these commands work without a connected device.`, `pi 读取 --interface/-f 指�
 		newPIInfoCommand(global),
 		newPIValidateCommand(global),
 		newPIControllersCommand(global),
-		newPIResourcesCommand(global),
 		newPITasksCommand(global),
 		newPIGroupsCommand(global),
 		newPIOptionsCommand(global),
@@ -70,9 +72,10 @@ func (c *piContext) label(label, name string) string {
 
 func newPIInfoCommand(global *GlobalOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:   "info",
-		Short: i18n.Text("Show the ProjectInterface summary", "显示 ProjectInterface 概览"),
-		Args:  cobra.NoArgs,
+		Use:     "info",
+		Aliases: []string{"i"},
+		Short:   i18n.Text("Show the project summary", "显示项目概览"),
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, err := loadPI(global)
 			if err != nil {
@@ -165,15 +168,15 @@ func outputInfo(out io.Writer, ctx *piContext) error {
 func newPIValidateCommand(global *GlobalOptions) *cobra.Command {
 	var strict bool
 	cmd := &cobra.Command{
-		Use:   "validate",
-		Short: i18n.Text("Validate the ProjectInterface", "校验 ProjectInterface"),
-		Long: i18n.Text(`Checks that the ProjectInterface parses, that every name is unique, that every
-reference points at something that exists, and that the declared files are on
-disk. --strict also fails on advisory findings (a controller this platform
-cannot create, a missing resource path, a missing language file).`, `校验 ProjectInterface 能否解析、名称是否唯一、引用是否存在，以及声明的
-文件是否在磁盘上。--strict 会把提示性问题（当前平台无法创建的控制器、缺失的资源
-路径、缺失的语言文件）也视为失败。`),
-		Args: cobra.NoArgs,
+		Use:     "validate",
+		Aliases: []string{"v"},
+		Short:   i18n.Text("Validate the interface", "校验接口"),
+		Long: i18n.Text(`Checks parsing, name uniqueness, every cross reference, and the declared
+files. -st/--strict also fails on advisory findings (a controller this platform
+cannot create, a missing resource path or language file).`, `检查解析、名称唯一性、全部交叉引用与声明的文件。-st/--strict 会把提示性问题
+（当前平台无法创建的控制器、缺失的资源路径或语言文件）也视为失败。`),
+		Example: `  maactl pi v -st -j`,
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, err := loadPI(global)
 			if err != nil {
@@ -199,16 +202,17 @@ cannot create, a missing resource path, a missing language file).`, `校验 Proj
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&strict, "strict", false, i18n.Text("treat advisory findings as errors", "把提示性问题视为错误"))
+	cmd.Flags().BoolVarP(&strict, "strict", "s", false, i18n.Text("treat advisory findings as errors", "把提示性问题视为错误"))
 	return cmd
 }
 
 func newPIControllersCommand(global *GlobalOptions) *cobra.Command {
 	var typeFilter string
 	cmd := &cobra.Command{
-		Use:   "controllers",
-		Short: i18n.Text("List controllers", "列出控制器"),
-		Args:  cobra.NoArgs,
+		Use:     "controllers",
+		Aliases: []string{"c"},
+		Short:   i18n.Text("List controllers", "列出控制器"),
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, err := loadPI(global)
 			if err != nil {
@@ -217,7 +221,7 @@ func newPIControllersCommand(global *GlobalOptions) *cobra.Command {
 			return listControllers(cmd.OutOrStdout(), ctx, typeFilter)
 		},
 	}
-	cmd.Flags().StringVar(&typeFilter, "type", "", i18n.Text("only show this controller type", "只显示该类型的控制器"))
+	cmd.Flags().StringVar(&typeFilter, "type", "", i18n.Text("only this controller type", "只显示该类型的控制器"))
 	return cmd
 }
 
@@ -258,98 +262,30 @@ func listControllers(out io.Writer, ctx *piContext, typeFilter string) error {
 	}
 	tableRows := make([][]string, 0, len(rows))
 	for _, row := range rows {
-		runnable := i18n.Text("no", "否")
-		if row.Runnable {
-			runnable = i18n.Text("yes", "是")
-		}
-		tableRows = append(tableRows, []string{row.Name, row.Label, row.Type, runnable, fmt.Sprint(row.Options), fmt.Sprint(row.Resources)})
+		tableRows = append(tableRows, []string{row.Name, row.Label, row.Type, yesNo(row.Runnable), fmt.Sprint(row.Options), fmt.Sprint(row.Resources)})
 	}
-	return table.Print(out, []string{
-		i18n.Text("name", "名称"), i18n.Text("label", "显示名称"), i18n.Text("type", "类型"),
-		i18n.Text("runnable", "可运行"), i18n.Text("options", "选项数"), i18n.Text("resources", "兼容资源数"),
-	}, tableRows)
-}
-
-func newPIResourcesCommand(global *GlobalOptions) *cobra.Command {
-	var controllerFilter string
-	cmd := &cobra.Command{
-		Use:   "resources",
-		Short: i18n.Text("List resources", "列出资源"),
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := loadPI(global)
-			if err != nil {
-				return err
-			}
-			return listResources(cmd.OutOrStdout(), ctx, controllerFilter)
-		},
-	}
-	cmd.Flags().StringVarP(&controllerFilter, "controller", "c", "", i18n.Text("only show resources compatible with this controller", "只显示与指定控制器兼容的资源"))
-	return cmd
-}
-
-// resourceRow is one row of `pi resources`.
-type resourceRow struct {
-	Name        string   `json:"name"`
-	Label       string   `json:"label"`
-	Path        []string `json:"path"`
-	Hash        string   `json:"hash,omitempty"`
-	Controllers []string `json:"controllers,omitempty"`
-	Options     int      `json:"options"`
-	Compatible  bool     `json:"compatible"`
-}
-
-func listResources(out io.Writer, ctx *piContext, controllerFilter string) error {
-	if controllerFilter != "" {
-		if _, err := ctx.project.FindController(controllerFilter); err != nil {
-			return withExitCode(ExitUsage, err)
-		}
-	}
-	rows := make([]resourceRow, 0, len(ctx.project.Resource))
-	for i := range ctx.project.Resource {
-		res := &ctx.project.Resource[i]
-		compatible := controllerFilter == "" || pi.Compatible(res.Controller, controllerFilter)
-		rows = append(rows, resourceRow{
-			Name:        res.Name,
-			Label:       ctx.label(res.Label, res.Name),
-			Path:        res.Path,
-			Hash:        res.Hash,
-			Controllers: res.Controller,
-			Options:     len(res.Option),
-			Compatible:  compatible,
-		})
-	}
-	if ctx.global.JSON {
-		return output.JSON(out, rows)
-	}
-	tableRows := make([][]string, 0, len(rows))
-	for _, row := range rows {
-		compatible := "-"
-		if controllerFilter != "" {
-			if row.Compatible {
-				compatible = i18n.Text("yes", "是")
-			} else {
-				compatible = i18n.Text("no", "否")
-			}
-		}
-		tableRows = append(tableRows, []string{row.Name, row.Label, pi.Join(row.Path), output.Value(row.Hash), formatList(row.Controllers), compatible})
-	}
-	return table.Print(out, []string{
-		i18n.Text("name", "名称"), i18n.Text("label", "显示名称"), i18n.Text("path", "资源路径"),
-		i18n.Text("hash", "hash"), i18n.Text("controllers", "限定控制器"), i18n.Text("compatible", "兼容"),
-	}, tableRows)
+	return table.Print(out, headers(
+		"name", "名称",
+		"label", "显示名称",
+		"type", "类型",
+		"runnable", "可运行",
+		"options", "选项数",
+		"resources", "兼容资源数",
+	), tableRows)
 }
 
 func newPITasksCommand(global *GlobalOptions) *cobra.Command {
 	var controllerFilter, resourceFilter, groupFilter string
 	var all bool
 	cmd := &cobra.Command{
-		Use:   "tasks",
-		Short: i18n.Text("List tasks", "列出任务"),
+		Use:     "tasks",
+		Aliases: []string{"t"},
+		Short:   i18n.Text("List tasks", "列出任务"),
 		Long: i18n.Text(`Lists tasks with their entry node, groups, and option count. Tasks that do not
-match the selected controller/resource are hidden unless --all is given, which
-also prints why they are unavailable.`, `列出任务及其入口节点、分组和选项数量。与所选控制器/资源不匹配的任务默认隐藏；
-使用 --all 会一并列出并说明不可用原因。`),
+match the selected controller/resource are hidden unless -all/--all is given.`, `列出任务及其入口节点、分组和选项数量。与所选控制器/资源不匹配的任务默认隐藏，
+-all/--all 会列出并说明原因。`),
+		Example: `  maactl pi t -c Android -r base
+  maactl pi t -all -j`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, err := loadPI(global)
@@ -388,10 +324,8 @@ func listTasks(out io.Writer, ctx *piContext, controllerFilter, resourceFilter, 
 	}
 	var res *pi.Resource
 	if resourceFilter != "" {
-		if ctrl == nil {
-			if len(ctx.project.Controller) == 1 {
-				ctrl = &ctx.project.Controller[0]
-			}
+		if ctrl == nil && len(ctx.project.Controller) == 1 {
+			ctrl = &ctx.project.Controller[0]
 		}
 		resolved, err := ctx.project.FindResource(resourceFilter, ctrl)
 		if err != nil {
@@ -422,9 +356,12 @@ func listTasks(out io.Writer, ctx *piContext, controllerFilter, resourceFilter, 
 	if ctx.global.JSON {
 		return output.JSON(out, rows)
 	}
-	headers := []string{i18n.Text("name", "名称"), i18n.Text("label", "显示名称"), i18n.Text("entry", "入口节点"), i18n.Text("group", "分组"), i18n.Text("options", "选项数")}
+	headersList := []string{
+		i18n.Text("name", "名称"), i18n.Text("label", "显示名称"), i18n.Text("entry", "入口节点"),
+		i18n.Text("group", "分组"), i18n.Text("options", "选项数"),
+	}
 	if all {
-		headers = append(headers, i18n.Text("unavailable", "不可用原因"))
+		headersList = append(headersList, i18n.Text("unavailable", "不可用原因"))
 	}
 	tableRows := make([][]string, 0, len(rows))
 	for _, row := range rows {
@@ -434,14 +371,15 @@ func listTasks(out io.Writer, ctx *piContext, controllerFilter, resourceFilter, 
 		}
 		tableRows = append(tableRows, values)
 	}
-	return table.Print(out, headers, tableRows)
+	return table.Print(out, headersList, tableRows)
 }
 
 func newPIGroupsCommand(global *GlobalOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:   "groups",
-		Short: i18n.Text("List task groups", "列出任务分组"),
-		Args:  cobra.NoArgs,
+		Use:     "groups",
+		Aliases: []string{"g"},
+		Short:   i18n.Text("List task groups", "列出任务分组"),
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, err := loadPI(global)
 			if err != nil {
@@ -477,20 +415,19 @@ func listGroups(out io.Writer, ctx *piContext) error {
 	}
 	tableRows := make([][]string, 0, len(rows))
 	for _, row := range rows {
-		expand := i18n.Text("no", "否")
-		if row.DefaultExpand {
-			expand = i18n.Text("yes", "是")
-		}
-		tableRows = append(tableRows, []string{row.Name, row.Label, expand, fmt.Sprint(row.Tasks)})
+		tableRows = append(tableRows, []string{row.Name, row.Label, yesNo(row.DefaultExpand), fmt.Sprint(row.Tasks)})
 	}
-	return table.Print(out, []string{i18n.Text("name", "名称"), i18n.Text("label", "显示名称"), i18n.Text("default_expand", "默认展开"), i18n.Text("tasks", "任务数")}, tableRows)
+	return table.Print(out, headers(
+		"name", "名称", "label", "显示名称", "default_expand", "默认展开", "tasks", "任务数",
+	), tableRows)
 }
 
 func newPIPresetsCommand(global *GlobalOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:   "presets",
-		Short: i18n.Text("List presets", "列出预设"),
-		Args:  cobra.NoArgs,
+		Use:     "presets",
+		Aliases: []string{"p"},
+		Short:   i18n.Text("List presets", "列出预设"),
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, err := loadPI(global)
 			if err != nil {
@@ -535,14 +472,17 @@ func listPresets(out io.Writer, ctx *piContext) error {
 	for _, row := range rows {
 		tableRows = append(tableRows, []string{row.Name, row.Label, fmt.Sprint(len(row.Tasks)), fmt.Sprint(len(row.Disabled))})
 	}
-	return table.Print(out, []string{i18n.Text("name", "名称"), i18n.Text("label", "显示名称"), i18n.Text("tasks", "启用任务数"), i18n.Text("disabled", "禁用任务数")}, tableRows)
+	return table.Print(out, headers(
+		"name", "名称", "label", "显示名称", "tasks", "启用任务数", "disabled", "禁用任务数",
+	), tableRows)
 }
 
 func newPISettingsCommand(global *GlobalOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:   "settings",
-		Short: i18n.Text("List setting sections", "列出设置分区"),
-		Args:  cobra.NoArgs,
+		Use:     "settings",
+		Aliases: []string{"s"},
+		Short:   i18n.Text("List setting sections", "列出设置分区"),
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, err := loadPI(global)
 			if err != nil {
@@ -572,13 +512,28 @@ func listSettings(out io.Writer, ctx *piContext) error {
 	}
 	tableRows := make([][]string, 0, len(rows))
 	for _, row := range rows {
-		expand := i18n.Text("no", "否")
-		if row.DefaultExpand {
-			expand = i18n.Text("yes", "是")
-		}
-		tableRows = append(tableRows, []string{row.Name, row.Label, expand, formatList(row.Option)})
+		tableRows = append(tableRows, []string{row.Name, row.Label, yesNo(row.DefaultExpand), formatList(row.Option)})
 	}
-	return table.Print(out, []string{i18n.Text("name", "名称"), i18n.Text("label", "显示名称"), i18n.Text("default_expand", "默认展开"), i18n.Text("options", "选项")}, tableRows)
+	return table.Print(out, headers(
+		"name", "名称", "label", "显示名称", "default_expand", "默认展开", "options", "选项",
+	), tableRows)
+}
+
+// headers builds a localized header row from "en, zh" pairs.
+func headers(pairs ...string) []string {
+	out := make([]string, 0, len(pairs)/2)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		out = append(out, i18n.Text(pairs[i], pairs[i+1]))
+	}
+	return out
+}
+
+// yesNo renders a boolean for a table cell.
+func yesNo(value bool) string {
+	if value {
+		return i18n.Text("yes", "是")
+	}
+	return i18n.Text("no", "否")
 }
 
 // formatList renders a string list for a table cell.

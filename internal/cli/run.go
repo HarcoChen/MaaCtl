@@ -67,29 +67,29 @@ func newRunCommand(global *GlobalOptions) *cobra.Command {
 	var taskName, nodeName string
 	var opt runOptions
 	cmd := &cobra.Command{
-		Use:   "run",
-		Short: i18n.Text("Run PI tasks, presets, or Pipeline nodes", "运行 PI task、preset 或 Pipeline 节点"),
-		Long: i18n.Text(`Executes a task declared in the ProjectInterface, every enabled task of a preset,
-and a Pipeline node directly.
+		Use:     "run",
+		Aliases: []string{"r"},
+		Short:   i18n.Text("Run tasks, presets, or nodes", "运行 task、preset 或节点"),
+		Long: i18n.Text(`Runs a task declared in the ProjectInterface, a Pipeline node, or every enabled
+task of a preset.
 
-The shortcut flags are exactly equivalent to the subcommands:
+The shortcuts equal the subcommands:
   maactl run -t <name>  ==  maactl run task <name>
   maactl run -n <name>  ==  maactl run node <name>
 
-Use "run preset <name>" to run a whole preset; --preset applies one preset's
-values to a single task.`, `运行 ProjectInterface 中声明的 task、preset 中所有启用的 task，或直接运行
-Pipeline 节点。
+Use "run preset <name>" for a whole preset; --preset applies one preset's values
+to a single task.`, `运行 ProjectInterface 中声明的 task、Pipeline 节点，或 preset 中所有启用的 task。
 
-快捷选项与子命令完全等价：
+快捷选项与子命令等价：
   maactl run -t <name>  ==  maactl run task <name>
   maactl run -n <name>  ==  maactl run node <name>
 
-运行整个 preset 请用 "run preset <name>"；--preset 只把某个 preset 的取值
-应用到单个 task。`),
-		Example: `  maactl run task "签到" -f D:\01_Projects\github\MaaMio --stop-after 30s
-  maactl run -t 签到 --dry-run --explain
-  maactl run preset ALL-IN --events all
-  maactl run node "签到-开始签到" --events all`,
+运行整个 preset 用 "run preset <name>"；--preset 只把某个 preset 的取值应用到
+单个 task。`),
+		Example: `  maactl run -t 签到 -if D:\MaaMio -sa 30s
+  maactl run -t 签到 -dr -x
+  maactl run preset ALL-IN -e all
+  maactl run -n "签到-开始签到"`,
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			switch {
@@ -104,8 +104,9 @@ Pipeline 节点。
 			}
 		},
 	}
-	cmd.Flags().StringVarP(&taskName, "task", "t", "", i18n.Text("shortcut for \"run task <task-name>\"", "等价于 \"run task <task-name>\""))
-	cmd.Flags().StringVarP(&nodeName, "node", "n", "", i18n.Text("shortcut for \"run node <node-name>\"", "等价于 \"run node <node-name>\""))
+	cmd.Flags().StringVarP(&taskName, "task", "t", "", i18n.Text(`same as "run task <name>"`, `等价于 "run task <name>"`))
+	cmd.Flags().StringVarP(&nodeName, "node", "n", "", i18n.Text(`same as "run node <name>"`, `等价于 "run node <name>"`))
+	help.MarkFlagsSection(cmd.Flags(), help.SectionShortcut, "task", "node")
 	addRunFlags(cmd.PersistentFlags(), &opt)
 	cmd.AddCommand(
 		newRunTaskCommand(global, &opt),
@@ -117,12 +118,13 @@ Pipeline 节点。
 
 func newRunTaskCommand(global *GlobalOptions, opt *runOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:   "task <task-name>",
-		Short: i18n.Text("Run a task declared in the ProjectInterface", "运行 ProjectInterface 中声明的 task"),
+		Use:     "task <task-name>",
+		Aliases: []string{"t"},
+		Short:   i18n.Text("Run a declared task", "运行声明的 task"),
 		Long: i18n.Text(`Looks the task up by name, label, or case-insensitive name, resolves its options
-and Pipeline overrides, then executes its entry node.`, `按名称、显示名称或大小写不敏感的名称查找 task，解析其配置项与 Pipeline
-覆盖，然后执行入口节点。`),
-		Example: `  maactl run task "签到" -f D:\01_Projects\github\MaaMio --events all`,
+and Pipeline overrides, then executes its entry node.`, `按名称、显示名称或大小写不敏感的名称查找 task，解析配置项与 Pipeline 覆盖，
+然后执行入口节点。`),
+		Example: `  maactl run task "签到" -if D:\MaaMio -e all`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return runTask(global, args[0], *opt)
@@ -132,13 +134,14 @@ and Pipeline overrides, then executes its entry node.`, `按名称、显示名�
 
 func newRunPresetCommand(global *GlobalOptions, opt *runOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:   "preset <preset-name>",
-		Short: i18n.Text("Run every enabled task of a preset, in order", "按顺序运行 preset 中所有启用的 task"),
-		Long: i18n.Text(`Runs the preset's tasks in declaration order, stopping at the first failure
-unless --continue-on-error is set. Command-line option values override the
-preset's, but only for options a task actually references.`, `按声明顺序运行 preset 中的 task；除非指定 --continue-on-error，否则遇到第一个失败
-即停止。命令行配置项只覆盖该 task 真正引用的同名配置项。`),
-		Example: `  maactl run preset 刷日常 -f D:\projects\demo --events off`,
+		Use:     "preset <preset-name>",
+		Aliases: []string{"p"},
+		Short:   i18n.Text("Run every enabled task of a preset", "运行 preset 中所有启用的 task"),
+		Long: i18n.Text(`Runs the preset's tasks in declaration order, stopping at the first failure unless
+-k/--continue-on-error is set. Command-line option values override the preset's,
+but only for options the task actually references.`, `按声明顺序运行 preset 中的 task；除非指定 -k/--continue-on-error，否则遇到第一个
+失败即停止。命令行配置项只覆盖该 task 真正引用的同名配置项。`),
+		Example: `  maactl run preset 刷日常 -e off`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return runPreset(global, args[0], *opt)
@@ -148,12 +151,13 @@ preset's, but only for options a task actually references.`, `按声明顺序运
 
 func newRunNodeCommand(global *GlobalOptions, opt *runOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:   "node <node-name>",
-		Short: i18n.Text("Run a Pipeline node directly", "直接运行 Pipeline 节点"),
+		Use:     "node <node-name>",
+		Aliases: []string{"n"},
+		Short:   i18n.Text("Run a Pipeline node", "运行 Pipeline 节点"),
 		Long: i18n.Text(`Uses the node name as the task entry. The resource comes from the selected PI
-resource, or from --path when the ProjectInterface is not involved.`, `节点名称直接作为任务入口。资源来自所选 PI 资源，或用 --path 直接指定。`),
-		Example: `  maactl run node "签到-开始签到" --events all
-  maactl run node Login --path D:\pkg\resource`,
+resource, or from -pa/--path.`, `节点名称直接作为任务入口。资源来自所选 PI 资源，或用 -pa/--path 指定。`),
+		Example: `  maactl run node "签到-开始签到" -e all
+  maactl run node Login -pa D:\pkg\resource`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return runNode(global, args[0], *opt)
@@ -163,9 +167,9 @@ resource, or from --path when the ProjectInterface is not involved.`, `节点名
 
 // addRunFlags declares the shared execution flags.
 func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
-	flags.StringVarP(&opt.resource, "resource", "r", "", i18n.Text("PI resource name (default: config, then the first compatible resource)", "PI 资源名称（默认：配置文件，其次第一个兼容资源）"))
-	flags.StringVarP(&opt.controller, "controller", "c", "", i18n.Text("PI controller name (default: config, then the only controller)", "PI 控制器名称（默认：配置文件，其次唯一的控制器）"))
-	flags.StringVarP(&opt.adbAddress, "adb-address", "a", "", i18n.Text("ADB device address (default: config, then the only detected device)", "ADB 设备地址（默认：配置文件，其次唯一检测到的设备）"))
+	flags.StringVarP(&opt.resource, "resource", "r", "", i18n.Text("PI resource (default: config, then the first compatible)", "PI 资源（默认：配置文件，其次第一个兼容资源）"))
+	flags.StringVarP(&opt.controller, "controller", "c", "", i18n.Text("PI controller (default: config, then the only one)", "PI 控制器（默认：配置文件，其次唯一的控制器）"))
+	flags.StringVarP(&opt.adbAddress, "adb-address", "a", "", i18n.Text("ADB address (default: config, then the only device)", "ADB 地址（默认：配置文件，其次唯一设备）"))
 	flags.StringVar(&opt.adbName, "name", "", i18n.Text("ADB device name reported by MaaToolkit", "MaaToolkit 报告的 ADB 设备名称"))
 	flags.StringVar(&opt.adbPath, "adb-path", "", i18n.Text("adb executable used to build the controller", "用于创建控制器的 adb 可执行文件"))
 	flags.StringVar(&opt.win32Handle, "win32-handle", "", i18n.Text("Win32 window handle, decimal or 0x hex", "Win32 窗口句柄，十进制或 0x 十六进制"))
@@ -175,31 +179,36 @@ func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
 	flags.StringVar(&opt.win32Mouse, "win32-mouse", "", i18n.Text("Win32 mouse method (default: PI config, then Seize)", "Win32 鼠标方式（默认：PI 配置，其次 Seize）"))
 	flags.StringVar(&opt.win32Keyboard, "win32-keyboard", "", i18n.Text("Win32 keyboard method (default: PI config, then Seize)", "Win32 键盘方式（默认：PI 配置，其次 Seize）"))
 	flags.StringVar(&opt.gamepadType, "gamepad-type", "", i18n.Text("Gamepad type: Xbox360 or DualShock4", "Gamepad 类型：Xbox360 或 DualShock4"))
-	flags.StringArrayVar(&opt.optionValues, "option", nil, i18n.Text("option value as name=value (select/switch), name=a,b (checkbox), or name.field=value (input/hotkey); repeatable", "配置项取值：name=value（select/switch）、name=a,b（checkbox）或 name.field=value（input/hotkey）；可重复"))
+	flags.StringArrayVar(&opt.optionValues, "option", nil, i18n.Text("name=value, name=a,b, or name.field=value; repeatable", "name=value、name=a,b 或 name.field=value；可重复"))
 	flags.StringVar(&opt.optionFile, "option-file", "", i18n.Text("JSON file of option values", "包含配置项取值的 JSON 文件"))
-	flags.StringVar(&opt.preset, "preset", "", i18n.Text("apply a preset's option values to this task", "把 preset 的配置项取值应用于该任务"))
+	flags.StringVarP(&opt.preset, "preset", "p", "", i18n.Text("apply this preset's values to the task", "把该 preset 的取值应用到 task"))
 	flags.StringVarP(&opt.override, "override", "o", "", i18n.Text("final Pipeline override JSON", "最终 Pipeline override JSON"))
 	flags.StringVar(&opt.overrideFile, "override-file", "", i18n.Text("file with the final Pipeline override JSON", "包含最终 Pipeline override JSON 的文件"))
-	flags.StringArrayVar(&opt.overlay, "overlay", nil, i18n.Text("resource root loaded after the selected resource; repeatable", "在所选资源之后加载的资源根目录；可重复"))
-	flags.StringArrayVar(&opt.paths, "path", nil, i18n.Text("resource root for `run node`, replacing the PI resource; repeatable", "`run node` 的资源根目录（替代 PI 资源）；可重复"))
-	flags.StringVar(&opt.events, "events", "focus", i18n.Text("event output: focus (PI text), all (all sink events), or off", "事件输出：focus（PI 文本）、all（全部 sink 事件）或 off"))
-	flags.StringVar(&opt.focusDisplay, "focus-display", "log", i18n.Text("focus display channels to print: log,toast,notification,dialog,modal or all", "要输出的 focus 展示渠道：log,toast,notification,dialog,modal 或 all"))
+	flags.StringArrayVar(&opt.overlay, "overlay", nil, i18n.Text("resource root loaded last; repeatable", "最后加载的资源根目录；可重复"))
+	flags.StringArrayVar(&opt.paths, "path", nil, i18n.Text("resource root for `run node`, replacing the PI resource", "`run node` 的资源根目录（替代 PI 资源）"))
+	flags.StringVarP(&opt.events, "events", "e", "focus", i18n.Text("focus (PI text), all (every sink event), or off", "focus（PI 文本）、all（全部 sink 事件）或 off"))
+	flags.StringVar(&opt.focusDisplay, "focus-display", "log", i18n.Text("channels: log,toast,notification,dialog,modal or all", "渠道：log,toast,notification,dialog,modal 或 all"))
 	flags.DurationVar(&opt.timeout, "timeout", 0, i18n.Text("stop and fail after this duration", "超过该时长后停止并失败"))
-	flags.DurationVar(&opt.stopAfter, "stop-after", 0, i18n.Text("stop after this duration and treat the run as successful (debug aid)", "运行该时长后停止并视为成功（调试用）"))
+	flags.DurationVar(&opt.stopAfter, "stop-after", 0, i18n.Text("stop after this duration and succeed (debug aid)", "运行该时长后停止并视为成功（调试用）"))
 	flags.BoolVar(&opt.dryRun, "dry-run", false, i18n.Text("resolve and print the run without connecting a controller", "只解析并打印本次运行，不连接控制器"))
-	flags.BoolVar(&opt.explain, "explain", false, i18n.Text("print selections and every Pipeline override layer", "打印选择结果与每一层 Pipeline override"))
+	flags.BoolVarP(&opt.explain, "explain", "x", false, i18n.Text("print selections and every override layer", "打印选择结果与每一层 override"))
 	flags.BoolVar(&opt.requireHash, "require-resource-hash", false, i18n.Text("fail when resource.hash does not match", "resource.hash 不匹配时失败"))
-	flags.BoolVar(&opt.noAgent, "no-agent", false, i18n.Text("do not start declared agent processes", "不启动声明的 agent 进程"))
-	flags.StringVar(&opt.agentLog, "agent-log", "term", i18n.Text("agent output: term, off, or a directory for one log file per agent", "agent 输出：term、off 或目录（每个 agent 一个日志文件）"))
-	flags.BoolVar(&opt.continueOnError, "continue-on-error", false, i18n.Text("keep running preset tasks after a failure", "preset 中某个 task 失败后继续运行"))
+	flags.BoolVar(&opt.noAgent, "no-agent", false, i18n.Text("do not start declared agents", "不启动声明的 agent"))
+	flags.StringVar(&opt.agentLog, "agent-log", "term", i18n.Text("term, off, or a directory for one log per agent", "term、off 或目录（每个 agent 一个日志）"))
+	flags.BoolVarP(&opt.continueOnError, "continue-on-error", "k", false, i18n.Text("keep running preset tasks after a failure", "preset 中某个 task 失败后继续"))
 
-	help.MarkFlagsSection(flags, help.SectionExecution,
+	help.MarkFlagsSection(flags, help.SectionTarget,
 		"resource", "controller", "adb-address", "name", "adb-path",
 		"win32-handle", "win32-class", "win32-window", "win32-screencap", "win32-mouse", "win32-keyboard",
-		"gamepad-type", "option", "option-file", "preset", "override", "override-file",
-		"overlay", "path", "events", "focus-display", "timeout", "stop-after",
-		"dry-run", "explain", "require-resource-hash", "no-agent", "agent-log",
-		"continue-on-error")
+		"gamepad-type")
+	help.MarkFlagsSection(flags, help.SectionOptions,
+		"option", "option-file", "preset", "override", "override-file")
+	help.MarkFlagsSection(flags, help.SectionResources,
+		"path", "overlay", "require-resource-hash")
+	help.MarkFlagsSection(flags, help.SectionOutput,
+		"events", "focus-display")
+	help.MarkFlagsSection(flags, help.SectionControl,
+		"dry-run", "explain", "timeout", "stop-after", "no-agent", "agent-log", "continue-on-error")
 }
 
 // preparedRun is everything needed to execute one entry: the selected entities,

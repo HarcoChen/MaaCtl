@@ -3,13 +3,13 @@
 ```text
 cmd/maactl/            程序入口（main 包：解析参数、把 ExitError 映射为退出码）
 internal/
-  cli/                 命令树：root、pi、pi_options、device、resource、run、execute、
-                       config、controller、agent、exit
+  cli/                 命令树：root、pi、pi_options、resource、device、run、execute、
+                       config、controller、agent、exit、aliases
   pi/                  ProjectInterface v2 模型、加载与 import 合并、i18n、校验、
                        option 求值、Pipeline 合并、按键码表
   clientconfig/        客户端配置（maa_pi_config.json）读取与发现
   event/               sink 事件输出、focus 模板与 display 渠道过滤
-  help/                帮助渲染器（分区、继承来源）
+  help/                帮助渲染器（按用途分组的选项、短别名、声明顺序）
   i18n/                帮助语言检测与本地化文本
   maafw/               MaaFramework 运行库定位与初始化
     pack/              从 MaaFramework release 压缩包生成内嵌 payload
@@ -41,6 +41,19 @@ maafw/                 本地 MaaFramework 运行库（不入库）
 | `pipeline.go` | Pipeline override 合并与模板替换（整串占位符保留类型） |
 | `plan.go` | `pi options` 的只读配置项树 |
 | `hotkey.go` | 快捷键字符串解析与 Adb/Win32 虚拟按键码映射 |
+
+## 命令与短别名
+
+每个命令都有 1–3 字母别名，每个选项都有单字母 shorthand 或 2–3 字母助记别名：
+
+- **命令别名**用 cobra 原生 `Aliases`（`pi` → `if`/`interface`，`pi tasks` → `t` 等）。
+- **选项别名**由 `internal/cli/aliases.go` 的 `flagAliases` 表驱动：多字母形式（pflag 只支持
+  单字符，无法注册为 shorthand）在解析前由 `NormalizeArgs` 统一改写成 `--long`，同一张表
+  同时给帮助渲染器提供要显示的别名。因此“能写的”与“帮助里列的”总是一致。
+- 别名在全命令树内唯一，只对 `--` 之前的参数生效；`--` 之后的参数原样传递。
+
+`preserveFlagOrder` 关闭 pflag 的字母序排序（包括 cobra 懒创建的 `lflags`/`iflags`），
+使帮助里的选项按代码声明顺序排列，同类选项自然相邻。
 
 ## 失败与退出码
 

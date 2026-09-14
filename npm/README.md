@@ -7,10 +7,10 @@
 # 直接运行，无需全局安装
 npx maactl --version
 npx maactl device adb
-npx maactl pi tasks -f D:\01_Projects\github\MaaMio
+npx maactl pi t -if D:\01_Projects\github\MaaMio
 
 # 若某些 npx 版本吞掉了参数，用 -- 显式分隔
-npx maactl -- run task "签到" -f D:\01_Projects\github\MaaMio --stop-after 30s
+npx maactl -- run -t "签到" -if D:\01_Projects\github\MaaMio -sa 30s
 ```
 
 `npx maactl ...` 之后的所有参数都会原样传给 `maactl.exe`，包括 `-f/--interface`、

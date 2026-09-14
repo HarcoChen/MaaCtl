@@ -9,51 +9,133 @@ import (
 	"maactl/internal/i18n"
 	"maactl/internal/output"
 	"maactl/internal/pi"
+	"maactl/internal/table"
 
 	maa "github.com/MaaXYZ/maa-framework-go/v4"
 	"github.com/spf13/cobra"
 )
 
-// newResourceCommand builds the `resource` group: it loads MaaFramework
-// resources without creating a controller, so it also works on packaged
-// artifacts and on explicit directories.
+// newResourceCommand builds the `resource` group: everything about resources in
+// one place — what the ProjectInterface declares, and what MaaFramework loads.
 func newResourceCommand(global *GlobalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "resource",
-		Short: i18n.Text("Load and inspect MaaFramework resources", "加载并检查 MaaFramework 资源"),
-		Long: i18n.Text(`Loads a resource (from a PI resource entry, or from explicit directories) and
-reports what MaaFramework found. No controller is created and no Pipeline runs.`, `加载资源（来自 PI 资源条目，或显式目录），并报告 MaaFramework 的加载结果。
-不会创建控制器，也不会运行 Pipeline。`),
-		Example: `  maactl resource inspect -f D:\01_Projects\github\MaaMio
-  maactl resource nodes -r base -f D:\01_Projects\github\MaaMio
-  maactl resource hash --path D:\projects\pkg\resource --verify`,
+		Use:     "resource",
+		Aliases: []string{"res"},
+		Short:   i18n.Text("Browse resources", "浏览资源"),
+		Long: i18n.Text(`Reads resource information from two angles: "list" reports what the
+ProjectInterface declares, while "inspect", "nodes", and "hash" load MaaFramework
+resources (from a PI resource entry or from --path) without creating a controller.`, `从两个角度看资源："list" 报告 ProjectInterface 的声明，"inspect"/"nodes"/"hash"
+则加载 MaaFramework 资源（来自 PI 资源条目或 --pa/--path），但不会创建控制器。`),
+		Example: `  maactl resource l -if D:\MaaMio
+  maactl resource i -r base -if D:\MaaMio
+  maactl resource h -pa D:\pkg\resource -vf`,
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
 	base := resourceFlags{}
-	cmd.PersistentFlags().StringVarP(&base.resource, "resource", "r", "", i18n.Text("PI resource name (default: the first resource)", "PI 资源名称（默认：第一个资源）"))
-	cmd.PersistentFlags().StringArrayVar(&base.paths, "path", nil, i18n.Text("resource root directory, repeatable; alternative to --resource", "资源根目录，可重复；与 --resource 二选一"))
-	cmd.PersistentFlags().StringArrayVar(&base.overlays, "overlay", nil, i18n.Text("resource root loaded after the base resource, repeatable", "在基础资源之后加载的资源根目录，可重复"))
+	cmd.PersistentFlags().StringVarP(&base.resource, "resource", "r", "", i18n.Text("PI resource name (default: the first one)", "PI 资源名称（默认：第一个）"))
+	cmd.PersistentFlags().StringArrayVar(&base.paths, "path", nil, i18n.Text("resource root, repeatable; alternative to --resource", "资源根目录，可重复；与 --resource 二选一"))
+	cmd.PersistentFlags().StringArrayVar(&base.overlays, "overlay", nil, i18n.Text("resource root loaded after the base ones, repeatable", "在基础资源之后加载的资源根目录，可重复"))
 
 	cmd.AddCommand(
-		newResourceActionCommand(global, &base, "inspect", i18n.Text("Show loaded resource metadata", "显示已加载资源的元数据"), false, false),
+		newResourceListCommand(global),
+		newResourceActionCommand(global, &base, "inspect", i18n.Text("Load a resource and show its metadata", "加载资源并显示元数据"), false, false),
 		newResourceActionCommand(global, &base, "nodes", i18n.Text("List Pipeline nodes", "列出 Pipeline 节点"), true, false),
 		newResourceActionCommand(global, &base, "hash", i18n.Text("Print or verify the resource hash", "打印或校验资源 hash"), false, true),
 	)
 	return cmd
 }
 
-// resourceFlags are shared by every `resource` subcommand.
+// resourceFlags are shared by the loading resource subcommands.
 type resourceFlags struct {
 	resource string
 	paths    []string
 	overlays []string
 }
 
+func newResourceListCommand(global *GlobalOptions) *cobra.Command {
+	var controllerFilter string
+	cmd := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"l"},
+		Short:   i18n.Text("List the declared resources", "列出声明的资源"),
+		Long: i18n.Text(`Reports the resource entries declared by the ProjectInterface: their paths, hash,
+controller restrictions, and option count. Nothing is loaded.`, `报告 ProjectInterface 声明的资源条目：路径、hash、控制器限制与选项数量。
+不会加载任何资源。`),
+		Example: `  maactl resource l -if D:\MaaMio -c Android`,
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx, err := loadPI(global)
+			if err != nil {
+				return err
+			}
+			return listResources(cmd.OutOrStdout(), ctx, controllerFilter)
+		},
+	}
+	cmd.Flags().StringVarP(&controllerFilter, "controller", "c", "", i18n.Text("compatibility against this controller", "按该控制器判断兼容性"))
+	return cmd
+}
+
+// resourceRow is one row of `resource list`.
+type resourceRow struct {
+	Name        string   `json:"name"`
+	Label       string   `json:"label"`
+	Path        []string `json:"path"`
+	Hash        string   `json:"hash,omitempty"`
+	Controllers []string `json:"controllers,omitempty"`
+	Options     int      `json:"options"`
+	Compatible  bool     `json:"compatible"`
+}
+
+func listResources(out io.Writer, ctx *piContext, controllerFilter string) error {
+	if controllerFilter != "" {
+		if _, err := ctx.project.FindController(controllerFilter); err != nil {
+			return withExitCode(ExitUsage, err)
+		}
+	}
+	rows := make([]resourceRow, 0, len(ctx.project.Resource))
+	for i := range ctx.project.Resource {
+		res := &ctx.project.Resource[i]
+		rows = append(rows, resourceRow{
+			Name:        res.Name,
+			Label:       ctx.label(res.Label, res.Name),
+			Path:        res.Path,
+			Hash:        res.Hash,
+			Controllers: res.Controller,
+			Options:     len(res.Option),
+			Compatible:  controllerFilter == "" || pi.Compatible(res.Controller, controllerFilter),
+		})
+	}
+	if ctx.global.JSON {
+		return output.JSON(out, rows)
+	}
+	tableRows := make([][]string, 0, len(rows))
+	for _, row := range rows {
+		compatible := "-"
+		if controllerFilter != "" {
+			compatible = yesNo(row.Compatible)
+		}
+		tableRows = append(tableRows, []string{row.Name, row.Label, pi.Join(row.Path), output.Value(row.Hash), formatList(row.Controllers), compatible})
+	}
+	return table.Print(out, headers(
+		"name", "名称",
+		"label", "显示名称",
+		"path", "资源路径",
+		"hash", "hash",
+		"controllers", "限定控制器",
+		"compatible", "兼容",
+	), tableRows)
+}
+
 func newResourceActionCommand(global *GlobalOptions, base *resourceFlags, use, short string, nodes, hash bool) *cobra.Command {
 	var verify bool
+	aliases := map[string][]string{
+		"inspect": {"i"},
+		"nodes":   {"n"},
+		"hash":    {"h"},
+	}[use]
 	cmd := &cobra.Command{
-		Use: use, Short: short, Args: cobra.NoArgs,
+		Use: use, Aliases: aliases, Short: short, Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withMaaFramework(global, func() error {
 				plan, err := loadResourcePlan(global, base)

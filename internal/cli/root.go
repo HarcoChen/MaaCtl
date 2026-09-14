@@ -48,21 +48,16 @@ func NewRootCommand(version string) *cobra.Command {
 		Long: i18n.Text(`MaaCtl loads ProjectInterface v2 projects, inspects MaaFramework resources,
 and runs Pipeline tasks.
 
-Commands are grouped by what they act on: pi inspects the project, device lists
-controllers, resource inspects loaded resources, and run executes tasks.
+Commands are grouped by what they act on: pi reads the project's declarations,
+resource reports resources (declared and loaded), device lists devices and
+windows, run executes, and config shows the client configuration.`, `MaaCtl 加载 ProjectInterface v2 项目，检查 MaaFramework 资源，并运行 Pipeline 任务。
 
-Use positional arguments only for commands and required names. Every option
-starts with - or --.`, `MaaCtl 加载 ProjectInterface v2 项目，检查 MaaFramework 资源，
-并运行 Pipeline 任务。
-
-命令按操作对象分组：pi 检查项目，device 列出设备，resource 检查已加载资源，
-run 执行任务。
-
-只有命令名和必需的名称使用位置参数。所有选项以 - 或 -- 开头。`),
-		Example: `  maactl pi tasks -f D:\projects\demo
-  maactl run task "签到" -f D:\01_Projects\github\MaaMio --stop-after 30s
-  maactl run -t "签到" --explain --dry-run
-  maactl device adb --json`,
+命令按操作对象分组：pi 读取项目声明，resource 报告资源（声明的与已加载的），
+device 列出设备与窗口，run 执行任务，config 显示客户端配置。`),
+		Example: `  maactl pi t -if D:\projects\demo
+  maactl resource l -if D:\projects\demo
+  maactl run -t 签到 -if D:\01_Projects\github\MaaMio -sa 30s
+  maactl device adb -j`,
 		SilenceErrors: true, SilenceUsage: true, Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
@@ -82,8 +77,8 @@ run 执行任务。
 
 	root.AddCommand(
 		newPICommand(&global),
-		newDeviceCommand(&global),
 		newResourceCommand(&global),
+		newDeviceCommand(&global),
 		newRunCommand(&global),
 		newConfigCommand(&global),
 		newVersionCommand(version),
@@ -93,9 +88,28 @@ run 执行任务。
 	// Create the default completion command now so its help can be localized.
 	root.InitDefaultCompletionCmd()
 	localizeCompletion(root)
+	// Pin flag order before anything else materializes the merged flag sets, and
+	// before help annotations are attached.
+	preserveFlagOrder(root)
+	applyFlagAliases(root)
 	help.SetFullHelp(root)
 	applyUsageArgs(root)
 	return root
+}
+
+// preserveFlagOrder disables pflag's alphabetical sorting so help lists flags in
+// the order each command declares them, which keeps related flags next to each
+// other. Cobra merges persistent flags into per-command sets lazily, so the raw
+// sets must be unsorted before that merge happens.
+func preserveFlagOrder(root *cobra.Command) {
+	walkCommands(root, func(cmd *cobra.Command) {
+		cmd.Flags().SortFlags = false
+		cmd.PersistentFlags().SortFlags = false
+	})
+	walkCommands(root, func(cmd *cobra.Command) {
+		cmd.LocalFlags().SortFlags = false
+		cmd.InheritedFlags().SortFlags = false
+	})
 }
 
 // Language returns the language code used for PI labels.
@@ -151,9 +165,10 @@ func versionLabel(version string) string {
 // newVersionCommand prints the version, mirroring the root --version flag.
 func newVersionCommand(version string) *cobra.Command {
 	return &cobra.Command{
-		Use:   "version",
-		Short: i18n.Text("Print version information", "显示版本信息"),
-		Args:  cobra.NoArgs,
+		Use:     "version",
+		Aliases: []string{"ver"},
+		Short:   i18n.Text("Print version information", "显示版本信息"),
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmt.Fprintln(cmd.OutOrStdout(), "maactl version "+versionLabel(version))
 			return nil

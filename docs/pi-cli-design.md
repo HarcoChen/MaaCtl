@@ -39,61 +39,79 @@
 ```text
 maactl [global flags] <group> [subcommand] [arguments] [flags]
 
-  pi info                       PI 概览（名称、版本、数量、语言、能力开关）
-  pi validate                  校验 PI（可加载 / 引用完整 / 约束满足）
-  pi controllers               列出控制器
-  pi resources                 列出资源
-  pi tasks                     列出任务（分组、可用性、启用状态）
-  pi groups                    列出任务分组
-  pi options                   列出（可实例化的）配置项树
-  pi presets                   列出预设
-  pi settings                  列出设置页分区
+  pi, if, interface              ProjectInterface 声明（只读，不需要设备）
+    info, i                      PI 概览（名称、版本、数量、语言、能力开关）
+    validate, v                 校验 PI（可加载 / 引用完整 / 约束满足）
+    controllers, c              列出控制器
+    tasks, t                    列出任务（分组、可用性、启用状态）
+    groups, g                   列出任务分组
+    options, o                  列出（可实例化的）配置项树
+    presets, p                  列出预设
+    settings, s                 列出设置页分区
 
-  device adb                   列出 MaaToolkit 发现的 ADB 设备
-  device win32                 列出 MaaToolkit 发现的桌面窗口
+  resource, res                  资源（声明的与已加载的，全在一处）
+    list, l                     列出 PI 声明的资源（不加载）
+    inspect, i                  加载资源并显示路径、hash、节点数
+    nodes, n                    列出资源中的 Pipeline 节点
+    hash, h                     打印资源 hash，可校验 resource.hash
 
-  resource inspect             加载资源并显示路径、hash、节点数
-  resource nodes               列出资源中的 Pipeline 节点
-  resource hash                打印资源 hash，可校验 resource.hash
+  device, dev                    设备与窗口（MaaToolkit 发现）
+    adb, a                      列出 ADB 设备
+    win32, w                    列出桌面窗口
 
-  run task <task-name>         运行 PI task（可用 --preset 套用预设取值）
-  run preset <preset-name>     按 preset 顺序运行启用的 task
-  run node <node-name>         直接运行 Pipeline 节点
-  run -t <task-name>           快捷形式（等价 run task）
-  run -n <node-name>           快捷形式（等价 run node）
+  run, r                         执行
+    task, t <task-name>         运行 PI task（可用 -p/--preset 套用预设取值）
+    preset, p <preset-name>     按 preset 顺序运行启用的 task
+    node, n <node-name>         直接运行 Pipeline 节点
+    -t/-n                       快捷形式（等价 run task / run node）
 
-  config show                  显示将生效的客户端配置及来源
-  config path                  显示配置文件的解析路径
+  config, cfg                    客户端配置（只读）
+    show, s                     显示将生效的配置及来源
+    path, p                     显示配置文件的解析路径
 
-  version                      显示版本（等价 maactl -v）
+  version, ver                   显示版本（等价 maactl -v）
 ```
 
 命名说明：
 
-- `pi` 有别名 `interface`，保留旧用户肌肉记忆；`interface` 不再接受 `--show` 之类的动作开关。
-- `device adb` / `device win32` 取代旧的 `adb devices` / `win32 devices`；旧命令保留一个版本，
-  隐藏并打印迁移提示。
-- `run -t/-n` 保留，因为它们是纯便捷形式，且与子命令语义完全一致；`run preset`
-  没有短参数，因为 `-p`/`--preset` 已经是「把预设取值应用到单个 task」的执行选项。
+- **顶层分组按「只读查询 → 执行 → 配置」排列**：`pi`、`resource`、`device` 都是查询，相邻放置；
+  `run` 是唯一的执行命令；`config` 是客户端状态。
+- **同一对象的所有查询都在同一个分组里**：资源声明的 `list` 与已加载资源的 `inspect/nodes/hash`
+  都在 `resource` 下（第一版把 `pi resources` 放在 pi、把 `resource inspect` 放在最后，已修正）。
+- `pi` 保留别名 `interface`；它不再接受 `--show` 之类的动作开关。
+- `device adb` / `device win32` 取代旧的 `adb devices` / `win32 devices`；旧命令隐藏保留一版，
+  调用时打印迁移提示。
+- `run -t/-n` 是纯便捷形式，与子命令语义完全一致；`run preset` 没有短参数，因为 `-p`/`--preset`
+  已经是「把预设取值应用到单个 task」的执行选项。
+
+### 3.1 短别名规则
+
+每个命令、每个选项都有短形式，短形式可以是 1–3 个字母：
+
+- **命令别名**用 cobra 原生别名实现，形如 `maactl pi t`、`maactl resource l`、`maactl r -t 签到`。
+  同一父命令下别名不重复，帮助的 `Commands:` 段直接列出 `名字, 别名`。
+- **选项短形式**有两种：
+  - 单字母用 pflag 的 shorthand：`-j`、`-r`、`-c`、`-a`、`-t`、`-n`、`-p`、`-o`、`-e`、`-x`、`-k`；
+  - 多字母（pflag 不支持）用 `-if`、`-lib`、`-opt`、`-pa`、`-wh` 这类助记别名，由 `maactl`
+    在解析前统一归一化为长参数，全部在帮助中列出。
+- 多字母别名在全命令树内唯一，并且只在 `--` 之前生效；`--` 之后的参数原样传递。
+- **不重复占用**：同一字母不会在两条命令里表示两件事（第一版的 `-v` = version/validate、
+  `-i` = interface/inspect 已取消）。
 
 ## 4. 全局选项
 
-| 参数 | 作用 |
-| --- | --- |
-| `-f, --interface <path>` | PI 文件或包含 `interface.json` 的目录；默认**进程启动目录**的 `./interface.json` |
-| `-l, --lib-dir <dir>` | MaaFramework 运行库目录；默认 `./maafw/bin`，其次 exe 相邻目录 |
-| `-j, --json` | 结构化 JSON 输出；运行中 sink 事件也变为 JSON 行 |
-| `--lang <code>` | 解析 PI `$label` 的语言，如 `zh_cn`/`en_us`；默认跟随系统（`MAACTL_LANG` 可覆盖） |
-| `--config <path>` | 客户端配置文件；默认自动发现 `<PI 目录>/config/maa_pi_config.json` |
-| `--no-config` | 不读取客户端配置文件 |
-| `--log-dir <dir>` | MaaFramework 日志目录 |
-| `--verbose` | 输出选择来源、加载路径与合并层级 |
-| `-h, --help` / `-v, --version` | 帮助 / 版本（`-v` 只在顶层是版本） |
-
-**短参数分配是不重叠的**：`-f/-l/-j/-h/-v` 属于全局；`-r/-c` 属于 `run`/`pi`/`resource` 的
-「resource/controller」语义；`-t/-n` 属于 `run` 的快捷形式；`-o` 是 `--override`。
-`--option`、`--option-file`、`--override-file`、`--preset` 只在长参数里出现，
-避免同一字母被指到两件事上。
+| 短形式 | 长形式 | 作用 |
+| --- | --- | --- |
+| `-f` / `-if` | `--interface <path>` | PI 文件或包含 `interface.json` 的目录；默认**进程启动目录**的 `./interface.json` |
+| `-l` / `-lib` | `--lib-dir <dir>` | MaaFramework 运行库目录；默认 `./maafw/bin`，其次 exe 相邻目录 |
+| `-j` | `--json` | 结构化 JSON 输出；运行中 sink 事件也变为 JSON 行 |
+| `-lg` | `--lang <code>` | 解析 PI `$label` 的语言，如 `zh_cn`/`en_us`；默认跟随系统（`MAACTL_LANG` 可覆盖） |
+| `-cfg` | `--config <path>` | 客户端配置文件；默认自动发现 `<PI 目录>/config/maa_pi_config.json` |
+| `-nocfg` | `--no-config` | 不读取客户端配置文件 |
+| `-log` | `--log-dir <dir>` | MaaFramework 日志目录 |
+| `-vb` | `--verbose` | 输出选择来源、加载路径与合并层级 |
+| `-h` | `--help` | 帮助 |
+| `-v` | `--version` | 版本（只在顶层是版本） |
 
 ## 5. `pi` 子命令
 
@@ -102,15 +120,17 @@ maactl [global flags] <group> [subcommand] [arguments] [flags]
 
 | 命令 | 关键选项 | 说明 |
 | --- | --- | --- |
-| `pi info` | | 名称/显示名/版本/协议版本/控制器数/资源数/任务数/分组数/预设数/语言列表/是否声明 agent、pretask、telemetry |
-| `pi validate` | `--strict` | 默认只报错误；`--strict` 把「资源路径不存在」「hash 不匹配」「当前平台不支持的控制器」也视为错误 |
-| `pi controllers` | `--type <Adb\|Win32\|...>` | 显示 `name/label/type/是否可运行/引用它的资源数` |
-| `pi resources` | `--controller <name>` | 显示 `name/label/path/hash/controller 限制/是否与所选控制器兼容` |
-| `pi tasks` | `--controller` `--resource` `--group` `--all` | 显示 `name/label/entry/group/option 数`；默认隐藏与当前 controller/resource 不兼容的 task，`--all` 显示并标注 `reason` |
-| `pi groups` | | 分组 `name/label/default_expand/任务数` |
-| `pi options` | `--task` `--resource` `--controller` `--all` | 按 `global_option → resource → controller → task` 顺序列出会被激活的 option 树（含类型、默认值、层级、来源），`--all` 列出全部定义 |
-| `pi presets` | | 预设 `name/label/任务数`；`--json` 返回完整快照 |
-| `pi settings` | | 分区 `name/label/option 列表` |
+| `pi info` / `i` | | 名称/显示名/版本/协议版本/控制器数/资源数/任务数/分组数/预设数/语言列表/是否声明 agent、pretask、telemetry |
+| `pi validate` / `v` | `-st/--strict` | 默认只报错误；`-st` 把「资源路径不存在」「hash 不匹配」「当前平台不支持的控制器」也视为错误 |
+| `pi controllers` / `c` | `-ty/--type <Adb\|Win32\|...>` | 显示 `name/label/type/是否可运行/引用它的资源数` |
+| `pi tasks` / `t` | `-c` `-r` `-gr/--group` `-all/--all` | 显示 `name/label/entry/group/option 数`；默认隐藏与当前 controller/resource 不兼容的 task，`-all` 显示并标注 `reason` |
+| `pi groups` / `g` | | 分组 `name/label/default_expand/任务数` |
+| `pi options` / `o` | `-t/--task` `-r` `-c` `-all` | 按 `global_option → resource → controller → task` 顺序列出会被激活的 option 树（含类型、默认值、层级），`-all` 额外列出不适用与未被引用的定义 |
+| `pi presets` / `p` | | 预设 `name/label/任务数`；`--json` 返回完整快照 |
+| `pi settings` / `s` | | 分区 `name/label/option 列表` |
+
+资源查询全部在 `resource` 组：`list`（声明，不加载）与 `inspect`/`nodes`/`hash`（加载后），
+共享 `-r/--resource`（PI 资源名）与 `-pa/--path`（资源根目录）二选一。
 
 `pi tasks`/`pi options` 的可用性判断遵循协议：
 
@@ -120,31 +140,35 @@ maactl [global flags] <group> [subcommand] [arguments] [flags]
 
 ## 6. `run` 子命令
 
-`run task|preset|node` 共享同一套执行选项：
+`run task|preset|node` 共享同一套执行选项，帮助里按用途分组打印
+（快捷方式 / 目标选择 / 配置项与覆盖 / 资源 / 输出 / 运行控制）：
 
-| 参数 | 作用 |
-| --- | --- |
-| `-r, --resource <name>` | PI 资源名（默认：配置文件 → 第一个与控制器兼容的资源） |
-| `-c, --controller <name>` | PI 控制器名（默认：配置文件 → 唯一的控制器） |
-| `-a, --adb-address <serial>` | ADB 设备地址（默认：配置文件 → 唯一检测到的设备） |
-| `--name <name>` | ADB 设备名（MaaToolkit 报告的名称） |
-| `--adb-path <path>` | 覆盖 ADB 可执行文件路径 |
-| `--win32-handle/--win32-class/--win32-window` | Win32 窗口选择（默认：配置文件 → PI `win32` 正则 → 唯一窗口） |
-| `--win32-screencap/--win32-mouse/--win32-keyboard` | 覆盖 Win32 截图/输入方式 |
-| `--gamepad-type <Xbox360\|DualShock4>` | 虚拟手柄类型 |
-| `--option <name>=<value>` | 设置配置项取值；可重复（语法见 §7） |
-| `--option-file <path>` | 配置项取值 JSON 文件（结构同 `preset.task[].option`） |
-| `--preset <name>` | 载入该 preset 在此 task 上的任务启用状态与配置项取值（仅 `run task`） |
-| `-o, --override <json>` / `--override-file <path>` | 最终 Pipeline override，优先级最高，二者互斥 |
-| `--overlay <dir>` | 在所选资源之后追加加载的资源根目录，可重复 |
-| `--events <focus\|all\|off>` | 事件输出，默认 `focus` |
-| `--focus-display <list>` | 关注哪些 focus 渠道，默认 `log`；可写 `log,toast,notification,dialog,modal` 或 `all`（CLI 中 `modal` 不阻塞） |
-| `--dry-run` | 只做选择、资源加载与覆盖计算，不连接控制器、不跑 pretask、不执行节点 |
-| `--explain` | 打印/输出选择、各层 option 与最终 override（配合 `--dry-run` 只算不跑） |
-| `--timeout <duration>` | 总时限；超时 `PostStop` 并以退出码 7 结束 |
-| `--stop-after <duration>` | 运行指定时长后停止并视为成功（调试用） |
-| `--no-agent` / `--agent-log <term\|off\|dir>` | 与旧版一致 |
-| `--require-resource-hash` | `resource.hash` 不匹配时直接失败（默认仅告警） |
+| 分组 | 短形式 | 长形式 | 作用 |
+| --- | --- | --- | --- |
+| 快捷 | `-t` / `-n` | `--task` / `--node` | 等价于 `run task` / `run node` |
+| 目标 | `-r` | `--resource <name>` | PI 资源名（默认：配置文件 → 第一个与控制器兼容的资源） |
+| 目标 | `-c` | `--controller <name>` | PI 控制器名（默认：配置文件 → 唯一的控制器） |
+| 目标 | `-a` | `--adb-address <serial>` | ADB 设备地址（默认：配置文件 → 唯一检测到的设备） |
+| 目标 | `-nm` | `--name <name>` | ADB 设备名（MaaToolkit 报告的名称） |
+| 目标 | `-ap` | `--adb-path <path>` | 覆盖 ADB 可执行文件路径 |
+| 目标 | `-wh` `-wc` `-ww` | `--win32-handle/class/window` | Win32 窗口选择（默认：配置文件 → PI `win32` 正则 → 唯一窗口） |
+| 目标 | `-ws` `-wm` `-wk` | `--win32-screencap/mouse/keyboard` | 覆盖 Win32 截图/输入方式 |
+| 目标 | `-gt` | `--gamepad-type <Xbox360\|DualShock4>` | 虚拟手柄类型 |
+| 配置项 | `-opt` | `--option <name>=<value>` | 设置配置项取值；可重复（语法见 §7） |
+| 配置项 | `-of` | `--option-file <path>` | 配置项取值 JSON 文件（结构同 `preset.task[].option`） |
+| 配置项 | `-p` | `--preset <name>` | 载入该 preset 在此 task 上的取值（仅 `run task`） |
+| 配置项 | `-o` / `-ovf` | `--override <json>` / `--override-file <path>` | 最终 Pipeline override，优先级最高，二者互斥 |
+| 资源 | `-pa` | `--path <dir>` | `run node` 的资源根目录，替代 PI 资源，可重复 |
+| 资源 | `-ol` | `--overlay <dir>` | 在所选资源之后追加加载的资源根目录，可重复 |
+| 资源 | `-rh` | `--require-resource-hash` | `resource.hash` 不匹配时直接失败（默认仅告警） |
+| 输出 | `-e` | `--events <focus\|all\|off>` | 事件输出，默认 `focus` |
+| 输出 | `-fd` | `--focus-display <list>` | 关注哪些 focus 渠道，默认 `log`；可写 `log,toast,notification,dialog,modal` 或 `all`（CLI 中 `modal` 不阻塞） |
+| 控制 | `-dr` | `--dry-run` | 只做选择、资源加载与覆盖计算，不连接控制器、不跑 pretask、不执行节点 |
+| 控制 | `-x` | `--explain` | 打印选择、各层 option 与最终 override（配合 `-dr` 只算不跑） |
+| 控制 | `-to` | `--timeout <duration>` | 总时限；超时 `PostStop` 并以退出码 7 结束 |
+| 控制 | `-sa` | `--stop-after <duration>` | 运行指定时长后停止并视为成功（调试用） |
+| 控制 | `-na` / `-al` | `--no-agent` / `--agent-log <term\|off\|dir>` | agent 启动与输出去向 |
+| 控制 | `-k` | `--continue-on-error` | `run preset` 中某个 task 失败后继续 |
 
 ### 6.1 `run task <task-name>`
 
@@ -260,7 +284,47 @@ global_option（按声明顺序）
 - 出现在 `--option`、日志、`--explain`、JSON 输出中一律掩码为 `******`；
 - 写入配置文件时必须加密（见 §9）。
 
-## 8. 输出、事件与退出码
+## 8. 帮助、输出与退出码
+
+### 8.1 帮助布局
+
+帮助只保留一个标题行、一段说明、一段用法、命令表、按用途分组的选项、一个示例：
+
+```text
+run (r): 运行 task、preset 或节点
+
+<一两句说明>
+
+用法：
+  maactl run [flags]
+  maactl run <command> [flags]
+
+命令：
+  task, t <task-name>      运行声明的 task
+  ...
+
+快捷方式：
+  -t, --task <string>  等价于 "run task <name>"
+
+目标选择：
+  -r, --resource <string>   ...
+...
+全局选项：
+  -f, -if, --interface <string>  ...
+
+示例：
+  maactl run -t 签到 -if D:\MaaMio -sa 30s
+```
+
+规则：
+
+- 一行一个选项，左侧列是 `-短, -别名, --长 <类型>`，右侧是说明与（有意义的）默认值；
+- 相同用途的选项在一个分组里，**保持声明顺序**而不是字母序；
+- 命令列表直接写明 `名字, 别名`，不需要另查别名表；
+- 全局选项只在末尾打印一次；子命令帮助与父命令帮助的选项分组完全一致，
+  不再区分「shared」「inherited」，也不再重复打印多个副本。
+
+### 8.2 输出与事件
 
 - 查询类命令：文本为对齐表格（`--json` 为结构化 JSON）。
 - 运行类命令：进度与错误走 stderr；focus 文本与最终摘要走 stdout（方便
@@ -356,9 +420,10 @@ global_option（按声明顺序）
 | P1 | 本文档 | ✅ |
 | P2 | PI 数据模型 + 加载/import 合并 + i18n | ✅ |
 | P3 | option 求值 + preset + 分层 override | ✅ |
-| P4 | 新命令树（`pi`/`device`/`resource`/`run`/`config`） | ✅ |
+| P4 | 新命令树（`pi`/`resource`/`device`/`run`/`config`） | ✅ |
 | P5 | 运行期（pretask、`PI_*`、hash、explain/dry-run、退出码） | ✅ |
 | P6 | README / docs / 测试 | ✅ |
+| P7 | 命令与选项短别名、分组重排、帮助精简 | ✅ |
 
 校验与计划外补充：`pi validate`（结构化报告）、`pi options` 配置项树、
 `resource hash --verify`、客户端配置读取（`config show/path`）也一并实现。
@@ -373,18 +438,36 @@ global_option（按声明顺序）
 
 | 旧写法 | 新写法 |
 | --- | --- |
-| `maactl interface --show` | `maactl pi info` |
-| `maactl interface --controllers/--resources/--tasks/--validate` | `maactl pi controllers/resources/tasks/validate` |
+| `maactl interface --show` | `maactl pi info`（`maactl pi i`） |
+| `maactl interface --controllers/--tasks/--validate` | `maactl pi controllers/tasks/validate`（`c`/`t`/`v`） |
+| `maactl interface --resources` | `maactl resource list`（`maactl resource l`） |
 | `maactl interface --options/--presets` | `maactl pi options/presets` |
 | `maactl adb devices` | `maactl device adb`（旧命令保留迁移提示） |
 | `maactl win32 devices` | `maactl device win32` |
 | `maactl resource -i` / `resource -n` | `maactl resource inspect` / `resource nodes` |
 | `maactl run task <name>` / `run -t` | 不变 |
 | `maactl run node <name>` / `run -n` | 不变 |
-| `--option/-p`（旧版计划） | `--option`（无短参数）；`-p` 不再使用 |
-| `--override-file/-O` | `--override-file`（无短参数） |
+| `--option/-p`（旧版计划） | `--option` / `-opt`；`-p` 改为 `--preset` |
+| `--override-file/-O` | `--override-file` / `-ovf` |
 
-> 短参数冲突提醒：新版里 `-o` 是 **override**，`-t/-n` 是 `run` 的快捷形式；
-> `--option`、`--option-file`、`--override-file`、`--preset` 都不设短参数——它们两两重名
-> 或与快捷形式冲突。旧设计里 `-p` 表示 option、`-O` 表示 override-file、`-p` 又表示 preset，
-> 均已废弃。
+短形式对照（常用）：
+
+| 长形式 | 短形式 | 长形式 | 短形式 |
+| --- | --- | --- | --- |
+| `--interface` | `-f` / `-if` | `--lib-dir` | `-l` / `-lib` |
+| `--json` | `-j` | `--lang` | `-lg` |
+| `--config` | `-cfg` | `--no-config` | `-nocfg` |
+| `--all` | `-all` | `--strict` | `-st` |
+| `--group` | `-gr` | `--type` | `-ty` |
+| `--path` | `-pa` | `--overlay` | `-ol` |
+| `--verify` | `-vf` | `--option` | `-opt` |
+| `--option-file` | `-of` | `--override-file` | `-ovf` |
+| `--events` | `-e` | `--focus-display` | `-fd` |
+| `--dry-run` | `-dr` | `--explain` | `-x` |
+| `--timeout` | `-to` | `--stop-after` | `-sa` |
+| `--no-agent` | `-na` | `--agent-log` | `-al` |
+| `--require-resource-hash` | `-rh` | `--continue-on-error` | `-k` / `-coe` |
+| `--name` | `-nm` | `--adb-path` | `-ap` |
+
+> 短形式不再重复占用：`-v` 只在顶层是 `--version`（`interface --validate` 已改为 `pi validate`），
+> `-r`/`-c` 始终是 resource/controller，`-i` 不再表示 interface 或 inspect。

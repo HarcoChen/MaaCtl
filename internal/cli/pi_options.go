@@ -17,21 +17,22 @@ func newPIOptionsCommand(global *GlobalOptions) *cobra.Command {
 	var taskName, controllerFilter, resourceFilter string
 	var all bool
 	cmd := &cobra.Command{
-		Use:   "options",
-		Short: i18n.Text("List the option tree for a task", "列出某个任务的配置项树"),
-		Long: i18n.Text(`Shows which options are active and in what order they merge:
+		Use:     "options",
+		Aliases: []string{"o"},
+		Short:   i18n.Text("Show the option tree", "显示配置项树"),
+		Long: i18n.Text(`Shows which options are active and in which order they merge:
 global_option → resource.option → controller.option → task.option, including
 the nested options activated by the selected cases.
 
---all also lists options that do not apply here and the options no layer
-references.`, `显示哪些配置项会被激活，以及它们的合并顺序：
-global_option → resource.option → controller.option → task.option，并展开被选中
-case 激活的子配置项。
+-all/--all also lists options that do not apply here and the options no layer
+references.`, `显示哪些配置项会被激活，以及合并顺序：
+global_option → resource.option → controller.option → task.option，
+并展开被选中 case 激活的子配置项。
 
---all 还会列出当前不适用的配置项，以及没有任何层引用的配置项。`),
-		Example: `  maactl pi options -f D:\01_Projects\github\MaaMio
-  maactl pi options -f D:\projects\demo -t 常规作战 -c Windows -r Official
-  maactl pi options --all --json`,
+-all/--all 还会列出当前不适用的配置项，以及没有任何层引用的配置项。`),
+		Example: `  maactl pi o -if D:\MaaMio
+  maactl pi o -t 常规作战 -c Windows -r Official
+  maactl pi o -all -j`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, err := loadPI(global)

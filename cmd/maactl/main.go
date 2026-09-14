@@ -22,7 +22,7 @@ func main() {
 // error.
 func run(args []string) int {
 	root := cli.NewRootCommand(version)
-	root.SetArgs(args)
+	root.SetArgs(cli.NormalizeArgs(args))
 	root.SetOut(os.Stdout)
 	root.SetErr(os.Stderr)
 	err := root.Execute()

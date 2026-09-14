@@ -17,24 +17,25 @@ import (
 // maactl never writes the file: it is owned by the user's GUI client.
 func newConfigCommand(global *GlobalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "config",
-		Short: i18n.Text("Inspect the client configuration", "查看客户端配置"),
+		Use:     "config",
+		Aliases: []string{"cfg"},
+		Short:   i18n.Text("Show the client configuration", "查看客户端配置"),
 		Long: i18n.Text(`Reads the client configuration file (maa_pi_config.json) that remembers the
 user's controller, resource, device, and option choices. maactl only reads it.
 
-The file is searched at --config, then <PI directory>/config/maa_pi_config.json,
-then ./config/maa_pi_config.json.`, `读取客户端配置文件（maa_pi_config.json）——它记录了用户的控制器、资源、设备
-和配置项取值。maactl 只读取，不写回。
+Search order: -cfg/--config, then <PI>/config/maa_pi_config.json, then
+./config/maa_pi_config.json.`, `读取客户端配置文件（maa_pi_config.json）——它记录用户的控制器、资源、设备和
+配置项取值。maactl 只读取，不写回。
 
-查找顺序：--config，其次 <PI 目录>/config/maa_pi_config.json，再次
-./config/maa_pi_config.json。`),
-		Example: `  maactl config path -f D:\01_Projects\github\MaaMio
-  maactl config show -f D:\01_Projects\github\MaaMio`,
+查找顺序：-cfg/--config，其次 <PI 目录>/config/maa_pi_config.json，
+再次 ./config/maa_pi_config.json。`),
+		Example: `  maactl cfg p -if D:\MaaMio
+  maactl cfg s -if D:\MaaMio`,
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
 	cmd.AddCommand(&cobra.Command{
-		Use: "path", Short: i18n.Text("Print the configuration file path", "显示配置文件路径"), Args: cobra.NoArgs,
+		Use: "path", Aliases: []string{"p"}, Short: i18n.Text("Print the file path", "显示配置文件路径"), Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			_, path, err := global.LoadConfig(nil)
 			if err != nil {
@@ -44,7 +45,7 @@ then ./config/maa_pi_config.json.`, `读取客户端配置文件（maa_pi_config
 				return output.JSON(cmd.OutOrStdout(), map[string]any{"path": path, "exists": fileExists(path)})
 			}
 			if path == "" {
-				fmt.Fprintln(cmd.OutOrStdout(), "No client configuration path; pass --config <path>")
+				fmt.Fprintln(cmd.OutOrStdout(), "No client configuration path; pass -cfg <path>")
 				return nil
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), path)
@@ -52,7 +53,7 @@ then ./config/maa_pi_config.json.`, `读取客户端配置文件（maa_pi_config
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
-		Use: "show", Short: i18n.Text("Show the effective client configuration", "显示生效的客户端配置"), Args: cobra.NoArgs,
+		Use: "show", Aliases: []string{"s"}, Short: i18n.Text("Show the effective configuration", "显示生效的配置"), Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			project, err := global.LoadProject()
 			if err != nil {

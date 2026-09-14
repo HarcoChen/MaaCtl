@@ -66,7 +66,7 @@ func TestPISubcommandsRun(t *testing.T) {
 	}{
 		{[]string{"pi", "info", "-f", path}, []string{"示例 (demo) v1.2.3", "protocol: PI " + pi.ProtocolVersion}},
 		{[]string{"pi", "controllers", "-f", path}, []string{"name", "label", "type", "runnable", "Android", "Win32"}},
-		{[]string{"pi", "resources", "-f", path}, []string{"path", "hash", "base", "pc"}},
+		{[]string{"resource", "list", "-f", path}, []string{"path", "hash", "base", "pc"}},
 		{[]string{"pi", "tasks", "-f", path}, []string{"entry", "group", "打开游戏", "PC任务"}},
 		{[]string{"pi", "groups", "-f", path}, []string{"default_expand", "daily", "日常"}},
 		{[]string{"pi", "options", "-f", path}, []string{"[global_option]", "模式", "[select]"}},
@@ -288,9 +288,69 @@ func TestDeviceHelpUsesGlobalJSON(t *testing.T) {
 	if n := strings.Count(out, "-j, --json"); n != 1 {
 		t.Fatalf("json flag listed %d times:\n%s", n, out)
 	}
-	global := out[strings.Index(out, "Global Flags:"):]
+	global := out[strings.Index(out, "Global:"):]
 	if !strings.Contains(global, "-j, --json") {
 		t.Errorf("device adb should use the global json flag:\n%s", out)
+	}
+}
+
+// TestResourceQueriesLiveTogether pins the grouping fix: everything about
+// resources is under `resource`, and `pi` no longer has a resources command.
+func TestResourceQueriesLiveTogether(t *testing.T) {
+	if _, err := runCLI("pi", "resources"); err == nil {
+		t.Error("`pi resources` should be gone; use `resource list`")
+	}
+	out := mustHelp(t, "resource", "-h")
+	for _, want := range []string{"list, l", "inspect, i", "nodes, n", "hash, h"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("resource help is missing %q\n%s", want, out)
+		}
+	}
+}
+
+// TestCommandAliasesEndToEnd exercises the mnemonic aliases through the CLI.
+func TestCommandAliasesEndToEnd(t *testing.T) {
+	path := piFixture(t)
+	pairs := [][][]string{
+		{{"pi", "t", "-f", path}, {"pi", "tasks", "-f", path}},
+		{{"pi", "o", "-f", path}, {"pi", "options", "-f", path}},
+		{{"resource", "l", "-f", path}, {"resource", "list", "-f", path}},
+		{{"if", "i", "-f", path}, {"pi", "info", "-f", path}},
+		{{"cfg", "p", "-f", path}, {"config", "path", "-f", path}},
+	}
+	for _, pair := range pairs {
+		alias, err := runCLI(pair[0]...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", pair[0], err, alias)
+		}
+		canonical, err := runCLI(pair[1]...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", pair[1], err, canonical)
+		}
+		if alias != canonical {
+			t.Errorf("%v and %v differ:\n%s\n%s", pair[0], pair[1], alias, canonical)
+		}
+	}
+}
+
+// TestFlagAliasesEndToEnd exercises multi-letter flag aliases.
+func TestFlagAliasesEndToEnd(t *testing.T) {
+	path := piFixture(t)
+	alias, err := runCLI("pi", "t", "-if", path, "-c", "Android", "-all", "-j")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, alias)
+	}
+	canonical, err := runCLI("pi", "t", "--interface", path, "--controller", "Android", "--all", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alias != canonical {
+		t.Errorf("alias output differs:\n%s\n%s", alias, canonical)
+	}
+	if _, err := runCLI("pi", "v", "-if", path, "-st"); err == nil {
+		t.Errorf("strict validate should fail on the fixture's missing paths")
+	} else if !strings.Contains(err.Error(), "failed validation") {
+		t.Errorf("strict validate error = %v", err)
 	}
 }
 

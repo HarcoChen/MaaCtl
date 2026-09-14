@@ -25,9 +25,9 @@ maactl -v
 ```
 
 ```powershell
-maactl pi tasks -f D:\01_Projects\github\MaaMio
+maactl pi t -if D:\01_Projects\github\MaaMio
 maactl device adb
-maactl run task "签到" -f D:\01_Projects\github\MaaMio --stop-after 30s
+maactl run -t 签到 -if D:\01_Projects\github\MaaMio -sa 30s
 ```
 
 `maactl` 之后的参数原样透传给 `maactl.exe`（中文、含空格的路径、`-`/`--` 选项都支持），
@@ -46,7 +46,7 @@ maactl run task "签到" -f D:\01_Projects\github\MaaMio --stop-after 30s
 ```powershell
 # 放到任意目录后直接用绝对/相对路径调用
 .\maactl.exe -v
-.\maactl.exe pi tasks -f D:\01_Projects\github\MaaMio
+.\maactl.exe pi t -if D:\01_Projects\github\MaaMio
 
 # 把所在目录加进 PATH（当前会话生效），之后就能当普通命令用
 $env:Path += ";D:\tools\maactl"
@@ -63,58 +63,63 @@ maactl -v
 
 ```powershell
 maactl -v                                      # 版本（自带版本会同时显示 MaaFramework 版本）
-maactl pi info                                 # 读当前目录的 ./interface.json
-maactl pi tasks -f D:\path\to\project          # 列出 PI 中的 task
-maactl pi options -t 任务名 -f D:\path\to\project  # 查看该任务会激活哪些配置项
+maactl pi info                                 # 读当前目录的 ./interface.json（可写 maactl pi i）
+maactl pi t -if D:\path\to\project             # 列出 PI 中的 task
+maactl pi o -t 任务名 -if D:\path\to\project     # 查看该任务会激活哪些配置项
+maactl resource l -if D:\path\to\project       # 列出 PI 声明的资源（不加载）
 maactl device adb                              # 查看 ADB 设备
 maactl device win32                            # 查看 Win32 桌面窗口
-maactl run task "任务名" -f D:\path\to\project  # 运行 task
-maactl run task "任务名" --dry-run --explain    # 只看最终下发的 Pipeline override
+maactl run -t "任务名" -if D:\path\to\project    # 运行 task
+maactl run -t "任务名" -dr -x                   # 只看最终下发的 Pipeline override
 maactl help run                                # 查看某条命令的帮助
 ```
 
-命令分成五组：
+命令分成五组，**每个命令与每个选项都有短形式**（命令别名 1–3 字母，选项用单字母或 `-if`
+这类助记别名，帮助里都会列出）：
 
-| 命令 | 作用 |
-| --- | --- |
-| `pi` | 检查 ProjectInterface：`info`/`validate`/`controllers`/`resources`/`tasks`/`groups`/`options`/`presets`/`settings` |
-| `device` | 列出 MaaToolkit 发现的设备：`device adb` / `device win32` |
-| `resource` | 加载并检查资源：`inspect` / `nodes` / `hash` |
-| `run` | 执行：`run task <名字>` / `run preset <名字>` / `run node <名字>` |
-| `config` | 查看客户端配置：`config path` / `config show` |
+| 命令 | 别名 | 作用 |
+| --- | --- | --- |
+| `pi` | `if` | 检查 ProjectInterface：`info`/`validate`/`controllers`/`tasks`/`groups`/`options`/`presets`/`settings` |
+| `resource` | `res` | 资源：`list`（声明）/`inspect`/`nodes`/`hash`（已加载） |
+| `device` | `dev` | 列出 MaaToolkit 发现的设备：`device adb` / `device win32` |
+| `run` | `r` | 执行：`run task <名字>` / `run preset <名字>` / `run node <名字>` |
+| `config` | `cfg` | 查看客户端配置：`config path` / `config show` |
 
-全局参数：
+只读查询（`pi`、`resource`、`device`）在前，执行（`run`）在后；同一个对象的所有查询都只在
+一个分组里（资源声明与已加载资源都在 `resource` 下）。
 
-| 参数 | 作用 |
-| --- | --- |
-| `-f, --interface` | 指定 PI 文件或包含它的目录，默认 `./interface.json` |
-| `-l, --lib-dir` | 指定 MaaFramework DLL 目录，覆盖自带运行库 |
-| `-j, --json` | 以 JSON 输出，便于脚本处理 |
-| `--lang` | 解析 PI `$label` 的语言（默认跟随系统） |
-| `--config` / `--no-config` | 指定或跳过客户端配置文件 |
-| `--log-dir` | MaaFramework 日志目录 |
-| `--verbose` | 输出选择来源与合并细节 |
-| `-h, --help` / `-v, --version` | 帮助 / 版本 |
+全局参数（`-h` 可看全部）：
 
-执行选项（`run` 下，子命令共用）：
+| 短形式 | 长形式 | 作用 |
+| --- | --- | --- |
+| `-if` | `--interface` | 指定 PI 文件或包含它的目录，默认 `./interface.json` |
+| `-lib` | `--lib-dir` | 指定 MaaFramework DLL 目录，覆盖自带运行库 |
+| `-j` | `--json` | 以 JSON 输出，便于脚本处理 |
+| `-lg` | `--lang` | 解析 PI `$label` 的语言（默认跟随系统） |
+| `-cfg` / `-nocfg` | `--config` / `--no-config` | 指定或跳过客户端配置文件 |
+| `-log` | `--log-dir` | MaaFramework 日志目录 |
+| `-vb` | `--verbose` | 输出选择来源与合并细节 |
+| `-h` / `-v` | `--help` / `--version` | 帮助 / 版本 |
 
-| 参数 | 作用 |
-| --- | --- |
-| `-t, --task` / `-n, --node` | 运行 PI 中的 task，或直接运行 Pipeline 节点（等价子命令） |
-| `-r, --resource` / `-c, --controller` | 指定 PI 资源与控制器（默认取配置文件） |
-| `-a, --adb-address` / `--name` | 按地址或名称选择 ADB 设备 |
-| `--adb-path` | 覆盖 adb 可执行文件 |
-| `--win32-handle` / `--win32-class` / `--win32-window` | 选择 Win32 窗口 |
-| `--win32-screencap` / `--win32-mouse` / `--win32-keyboard` | 覆盖 Win32 截图与输入方式 |
-| `--gamepad-type` | 虚拟手柄类型：`Xbox360`（默认）或 `DualShock4` |
-| `--option` / `--option-file` | 设置 PI 配置项取值 |
-| `--preset` | 把某个 preset 的取值应用到本次 task |
-| `-o, --override` / `--override-file` | 最终 Pipeline override JSON |
-| `--overlay` / `--path` | 追加或替换资源根目录 |
-| `--dry-run` / `--explain` | 预演并打印选择与各层覆盖，不执行 |
-| `--events` / `--focus-display` | 事件与 focus 输出控制 |
-| `--timeout` / `--stop-after` | 限时运行 |
-| `--require-resource-hash` | `resource.hash` 不匹配时失败 |
+执行选项（`run` 下，子命令共用；按用途分组）：
+
+| 短形式 | 长形式 | 作用 |
+| --- | --- | --- |
+| `-t` / `-n` | `--task` / `--node` | 运行 PI 中的 task，或直接运行 Pipeline 节点（等价子命令） |
+| `-r` / `-c` | `--resource` / `--controller` | 指定 PI 资源与控制器（默认取配置文件） |
+| `-a` / `-nm` | `--adb-address` / `--name` | 按地址或名称选择 ADB 设备 |
+| `-ap` | `--adb-path` | 覆盖 adb 可执行文件 |
+| `-wh` / `-wc` / `-ww` | `--win32-handle` / `-class` / `-window` | 选择 Win32 窗口 |
+| `-ws` / `-wm` / `-wk` | `--win32-screencap` / `-mouse` / `-keyboard` | 覆盖 Win32 截图与输入方式 |
+| `-gt` | `--gamepad-type` | 虚拟手柄类型：`Xbox360`（默认）或 `DualShock4` |
+| `-opt` / `-of` | `--option` / `--option-file` | 设置 PI 配置项取值 |
+| `-p` | `--preset` | 把某个 preset 的取值应用到本次 task |
+| `-o` / `-ovf` | `--override` / `--override-file` | 最终 Pipeline override JSON |
+| `-pa` / `-ol` | `--path` / `--overlay` | 替换或追加资源根目录 |
+| `-dr` / `-x` | `--dry-run` / `--explain` | 预演并打印选择与各层覆盖，不执行 |
+| `-e` / `-fd` | `--events` / `--focus-display` | 事件与 focus 输出控制 |
+| `-to` / `-sa` | `--timeout` / `--stop-after` | 限时运行 |
+| `-rh` | `--require-resource-hash` | `resource.hash` 不匹配时失败 |
 
 退出码固定：`0` 成功、`2` 参数/PI、`3` 资源、`4` 控制器、`5` pretask、`6` 任务失败、
 `7` 超时、`8` 中断。
@@ -125,7 +130,7 @@ maactl help run                                # 查看某条命令的帮助
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/cli.md](docs/cli.md) | 命令参考：全局选项、退出码、配置文件、各组命令、配置项语法、迁移对照 |
+| [docs/cli.md](docs/cli.md) | 命令参考：短形式一览、退出码、配置文件、各组命令、配置项语法、迁移对照 |
 | [docs/pi-cli-design.md](docs/pi-cli-design.md) | 现行 CLI 设计（第二版）：设计原则、命令面、协议落实清单、实现分期 |
 | [docs/build.md](docs/build.md) | 从源码构建两种 exe、打包 MaaFramework、运行库查找顺序、版本注入与本地验证 |
 | [docs/architecture.md](docs/architecture.md) | 目录结构与各包职责 |
