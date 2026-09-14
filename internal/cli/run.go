@@ -16,6 +16,7 @@ import (
 
 type runOptions struct {
 	resource, controller, adbAddress string
+	adbName                          string
 	override, overrideFile           string
 	optionValues, overlay            []string
 	events                           string
@@ -73,6 +74,7 @@ func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
 	flags.StringVarP(&opt.resource, "resource", "r", "", i18n.Text("PI resource name (default: first compatible resource)", "PI 资源名称（默认：第一个兼容资源）"))
 	flags.StringVarP(&opt.controller, "controller", "c", "", i18n.Text("PI controller name (default: only controller)", "PI 控制器名称（默认：唯一的控制器）"))
 	flags.StringVarP(&opt.adbAddress, "adb-address", "a", "", i18n.Text("ADB device serial/address (default: only detected device)", "ADB 设备序列号/地址（默认：唯一检测到的设备）"))
+	flags.StringVar(&opt.adbName, "name", "", i18n.Text("ADB device name reported by MaaToolkit (default: only detected device)", "MaaToolkit 报告的设备名称（默认：唯一检测到的设备）"))
 	flags.StringVarP(&opt.override, "override", "o", "", i18n.Text("final Pipeline override JSON", "最终 Pipeline override JSON"))
 	flags.StringVarP(&opt.overrideFile, "override-file", "O", "", i18n.Text("file containing the final Pipeline override JSON", "包含最终 Pipeline override JSON 的文件"))
 	flags.StringArrayVarP(&opt.optionValues, "option", "p", nil, i18n.Text("option value as name=<JSON>; repeatable", "option 值，格式 name=<JSON>；可重复"))

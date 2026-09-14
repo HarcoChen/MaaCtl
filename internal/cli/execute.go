@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -119,40 +120,98 @@ func createController(spec *pi.Controller, opt runOptions) (*maa.Controller, err
 	if spec.Type != "Adb" {
 		return nil, fmt.Errorf("controller %q has unsupported type %q; this build supports Adb task execution", spec.Name, spec.Type)
 	}
-	address, adbPath, config := opt.adbAddress, "", ""
-	if address == "" {
-		devices := maa.FindAdbDevices()
-		if len(devices) == 0 {
-			return nil, fmt.Errorf("no ADB devices found; specify --adb-address/-a after connecting a device")
-		}
-		if len(devices) > 1 {
-			names := make([]string, len(devices))
-			for i, d := range devices {
-				names[i] = d.Address
-			}
-			return nil, fmt.Errorf("%d ADB devices found; specify --adb-address/-a: %s", len(devices), pi.Join(names))
-		}
-		address = devices[0].Address
-		adbPath = devices[0].AdbPath
-		config = devices[0].Config
-	}
-	sc, err := adb.ParseScreencapMethod(spec.Adb.Screencap)
+	// Every ADB connection detail comes from MaaToolkit, so the controller is
+	// built from information MaaFramework already discovered and validated. An
+	// empty ADB path in particular makes MaaAdbControllerCreate fail, which is
+	// why the address alone is never enough.
+	device, err := resolveAdbDevice(opt.adbAddress, opt.adbName)
 	if err != nil {
 		return nil, err
 	}
-	if spec.Adb.Screencap == "" {
+	// MaaToolkit recommends per-device screencap and input methods; the PI
+	// controller overrides them when it declares its own.
+	sc := device.ScreencapMethod
+	if sc == adb.ScreencapNone {
 		sc = adb.ScreencapDefault
 	}
-	in, err := adb.ParseInputMethod(spec.Adb.Input)
-	if err != nil {
-		return nil, err
+	if spec.Adb.Screencap != "" {
+		sc, err = adb.ParseScreencapMethod(spec.Adb.Screencap)
+		if err != nil {
+			return nil, err
+		}
 	}
-	if spec.Adb.Input == "" {
+	in := device.InputMethod
+	if in == adb.InputNone {
 		in = adb.InputDefault
 	}
-	ctrl := maa.NewAdbController(adbPath, address, sc, in, config, "")
+	if spec.Adb.Input != "" {
+		in, err = adb.ParseInputMethod(spec.Adb.Input)
+		if err != nil {
+			return nil, err
+		}
+	}
+	ctrl := maa.NewAdbController(device.AdbPath, device.Address, sc, in, device.Config, "")
 	if ctrl == nil {
-		return nil, fmt.Errorf("create ADB controller for %s", address)
+		return nil, fmt.Errorf("create ADB controller for %s (adb %s)", device.Address, device.AdbPath)
 	}
 	return ctrl, nil
+}
+
+// resolveAdbDevice picks the ADB device to connect to from the devices
+// MaaToolkit discovered. --adb-address matches the device address and --name
+// matches the device name; with neither, the only detected device is used.
+// The returned device carries the ADB path and config needed to create a
+// controller, so callers must pass those to MaaFramework instead of rebuilding
+// them from the address.
+func resolveAdbDevice(address, name string) (*maa.AdbDevice, error) {
+	devices := maa.FindAdbDevices()
+	if len(devices) == 0 {
+		return nil, fmt.Errorf("no ADB devices found; connect a device and check \"maactl adb devices\"")
+	}
+	if address == "" && name == "" {
+		if len(devices) > 1 {
+			return nil, fmt.Errorf("%d ADB devices found; specify --adb-address/-a or --name: %s", len(devices), describeAdbDevices(devices))
+		}
+		return devices[0], nil
+	}
+	var matched []*maa.AdbDevice
+	for _, device := range devices {
+		if address != "" && !strings.EqualFold(device.Address, address) {
+			continue
+		}
+		if name != "" && !strings.EqualFold(device.Name, name) {
+			continue
+		}
+		matched = append(matched, device)
+	}
+	switch len(matched) {
+	case 0:
+		return nil, fmt.Errorf("no ADB device matches %s; detected: %s", adbSelector(address, name), describeAdbDevices(devices))
+	case 1:
+		return matched[0], nil
+	default:
+		return nil, fmt.Errorf("%d ADB devices match %s: %s", len(matched), adbSelector(address, name), describeAdbDevices(matched))
+	}
+}
+
+// describeAdbDevices renders discovered devices for error messages, including
+// both the address and the name needed for --adb-address/--name.
+func describeAdbDevices(devices []*maa.AdbDevice) string {
+	descriptions := make([]string, len(devices))
+	for i, device := range devices {
+		descriptions[i] = fmt.Sprintf("%s (%s)", device.Address, device.Name)
+	}
+	return pi.Join(descriptions)
+}
+
+// adbSelector labels the --adb-address/--name filter in error messages.
+func adbSelector(address, name string) string {
+	var parts []string
+	if address != "" {
+		parts = append(parts, fmt.Sprintf("--adb-address %s", address))
+	}
+	if name != "" {
+		parts = append(parts, fmt.Sprintf("--name %s", name))
+	}
+	return pi.Join(parts)
 }

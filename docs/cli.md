@@ -43,7 +43,8 @@ maactl interface --show `
 
 | 参数 | 作用 |
 | --- | --- |
-| `-a, --adb-address` | ADB 设备序列号/地址（默认：唯一检测到的设备） |
+| `-a, --adb-address` | ADB 设备序列号/地址，按 MaaToolkit 检测到的设备地址匹配（默认：唯一检测到的设备） |
+| `--name` | ADB 设备名称，按 MaaToolkit 检测到的设备名称匹配（默认：唯一检测到的设备） |
 | `-c, --controller` | PI 控制器名称（默认：唯一的控制器） |
 | `-r, --resource` | PI 资源名称（默认：第一个兼容资源） |
 | `--events` | 事件输出：`focus`（默认）/ `all` / `off` |
@@ -152,7 +153,9 @@ maactl run -n "签到-开始签到" `
 
 - controller：PI 中只有一个 controller 时自动选择；多个 controller 时要求 `--controller/-c`。
 - resource：选择第一个与 controller 兼容的资源；可通过 `--resource/-r` 指定。
-- ADB 设备：检测到一个设备时自动选择；未检测到设备或检测到多个设备时要求 `--adb-address/-a`。
+- ADB 设备：通过 `-a/--adb-address` 按地址、`--name` 按名称匹配 MaaToolkit 检测到的设备；两者都不给时，
+  恰好检测到一个设备则自动选择，未检测到或多个设备时要求显式匹配。连接使用的 ADB 路径、config 与
+  建议的截图/输入方式都取自该设备的检测结果（`maactl adb devices` 可查看地址与名称）。
 
 `--stop-after` 适合验证会持续运行的任务；正常的有限 task 不需要该参数。
 

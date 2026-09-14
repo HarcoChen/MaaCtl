@@ -83,7 +83,8 @@ maactl help run                                  # 查看某条命令的帮助
 | 参数 | 作用 |
 | --- | --- |
 | `-t, --task` / `-n, --node` | 运行 PI 中的 task，或直接运行 Pipeline 节点 |
-| `-a, --adb-address` | ADB 设备序列号/地址，默认使用唯一检测到的设备 |
+| `-a, --adb-address` | ADB 设备序列号/地址，用 MaaToolkit 检测到的设备信息匹配 |
+| `--name` | ADB 设备名称（`maactl adb devices` 显示的名称），用 MaaToolkit 检测到的设备信息匹配 |
 | `-c, --controller` / `-r, --resource` | 指定 PI controller 与资源 |
 | `--events` | 事件输出：`focus`（默认）/ `all` / `off` |
 | `--stop-after` | 运行指定时长后停止，适合验证与限时运行 |
