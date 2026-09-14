@@ -22,9 +22,9 @@ test('the bin shim is executable-looking and dependency free', () => {
   assert.equal(pkg.devDependencies, undefined);
 });
 
-test('the package is Windows only and needs a modern Node', () => {
+test('the package is Windows only and needs Node 22+', () => {
   assert.deepEqual(pkg.os, ['win32']);
-  assert.match(pkg.engines.node, />=1[89]/);
+  assert.equal(pkg.engines.node, '>=22');
 });
 
 test('every file referenced by the manifest is published', () => {

@@ -20,7 +20,8 @@ npx maactl -- run task "自动挂机卖蛋" -f D:\01_Projects\github\MaaMio --st
 ## 平台
 
 只提供 Windows amd64 的 `maactl.exe`（自带 MaaFramework 运行库）。包内声明了
-`"os": ["win32"]`，在其他系统上 npm 会以 `EBADPLATFORM` 拒绝安装。
+`"os": ["win32"]`，在其他系统上 npm 会以 `EBADPLATFORM` 拒绝安装；同时声明了
+`"engines": { "node": ">=22" }`，因为包装器只用 Node 22 及以上提供的内置能力。
 
 ## maactl.exe 的来源
 

@@ -109,5 +109,5 @@ maactl help run                                  # 查看某条命令的帮助
 ## 环境要求
 
 - 操作系统：Windows 10/11 x64（当前只提供该平台的 exe）。
-- 用 npm 方式安装时额外需要 Node.js ≥ 18。
+- 用 npm 方式安装时额外需要 Node.js ≥ 22。
 - 运行 ADB 任务时设备需已连接，且 `adb devices` 能看到设备。

@@ -29,16 +29,17 @@ function tempDir(prefix = 'maactl-npm-test-') {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
-/** Run `body` with the wrapper's environment variables cleared, restoring them afterwards. */
-function withEnv(values, body) {
+/**
+ * Clear the wrapper's environment variables, apply `values`, and return a
+ * function that puts the previous values back.
+ */
+function swapEnv(values) {
   const saved = new Map(ENV_KEYS.map((key) => [key, process.env[key]]));
   for (const key of ENV_KEYS) {
     delete process.env[key];
   }
   Object.assign(process.env, values);
-  try {
-    return body();
-  } finally {
+  return () => {
     for (const [key, value] of saved) {
       if (value === undefined) {
         delete process.env[key];
@@ -46,26 +47,26 @@ function withEnv(values, body) {
         process.env[key] = value;
       }
     }
+  };
+}
+
+/** Run `body` with the wrapper's environment variables cleared, restoring them afterwards. */
+function withEnv(values, body) {
+  const restore = swapEnv(values);
+  try {
+    return body();
+  } finally {
+    restore();
   }
 }
 
 /** `withEnv` for async bodies: clears and restores around an await. */
 async function withEnvAsync(values, body) {
-  const saved = new Map(ENV_KEYS.map((key) => [key, process.env[key]]));
-  for (const key of ENV_KEYS) {
-    delete process.env[key];
-  }
-  Object.assign(process.env, values);
+  const restore = swapEnv(values);
   try {
     return await body();
   } finally {
-    for (const [key, value] of saved) {
-      if (value === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = value;
-      }
-    }
+    restore();
   }
 }
 
@@ -105,7 +106,7 @@ async function withServer(routes, body) {
     return await body(base, server);
   } finally {
     // Keep-alive sockets would otherwise keep server.close() pending forever.
-    server.closeAllConnections?.();
+    server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
   }
 }
