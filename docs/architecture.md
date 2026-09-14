@@ -3,7 +3,7 @@
 ```text
 cmd/maactl/            程序入口（main 包，仅解析参数并调用 cli）
 internal/
-  cli/                 命令树：root、adb/win32、interface、resource、run、execute
+  cli/                 命令树：root、adb/win32、interface、resource、run、execute、agent
   pi/                  ProjectInterface v2 的数据模型、加载与查找
   event/               sink 事件输出与 focus 文本渲染
   help/                帮助渲染器（分区、继承来源、planned 标记）

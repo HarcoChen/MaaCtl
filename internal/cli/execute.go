@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -30,25 +29,6 @@ func execute(global *Options, project *pi.Loaded, piCtrl *pi.Controller, piRes *
 		return fmt.Errorf("initialize MaaFramework from %s: %w", libDir, err)
 	}
 	defer func() { _ = maa.Release() }()
-	var agent *exec.Cmd
-	if !opt.noAgent && project.Agent != nil && project.Agent.ChildExec != "" {
-		execPath := project.Agent.ChildExec
-		if !filepath.IsAbs(execPath) {
-			execPath = filepath.Join(project.Dir, execPath)
-		}
-		agent = exec.Command(execPath, project.Agent.ChildArgs...)
-		agent.Dir = project.Dir
-		agent.Stdout, agent.Stderr = os.Stdout, os.Stderr
-		if err := agent.Start(); err != nil {
-			return fmt.Errorf("start agent: %w", err)
-		}
-		defer func() {
-			if agent.Process != nil {
-				_ = agent.Process.Kill()
-				_, _ = agent.Process.Wait()
-			}
-		}()
-	}
 	stopSignal := make(chan os.Signal, 1)
 	signal.Notify(stopSignal, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(stopSignal)
@@ -65,6 +45,14 @@ func execute(global *Options, project *pi.Loaded, piCtrl *pi.Controller, piRes *
 			return fmt.Errorf("load resource %s: %s", full, job.Status())
 		}
 	}
+	// Agents start once the resource is loaded: the AgentClient is bound to that
+	// resource, so the agent's custom recognitions and actions are available to
+	// the resource the task runs on.
+	agents, err := startAgents(project, res, piRes.Name, opt, stopSignal)
+	if err != nil {
+		return err
+	}
+	defer stopAgents(agents)
 	ctrl, err := createController(piCtrl, opt)
 	if err != nil {
 		return err

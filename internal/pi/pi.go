@@ -1,6 +1,11 @@
 // Package pi models and loads ProjectInterface v2 files.
 package pi
 
+import (
+	"bytes"
+	"encoding/json"
+)
+
 // ProjectInterface is the subset of ProjectInterface v2 required to select and
 // run a task. Unknown PI fields are deliberately retained by json.Unmarshal's
 // forward-compatible behavior.
@@ -12,13 +17,44 @@ type ProjectInterface struct {
 	Resource         []Resource   `json:"resource"`
 	Task             []Task       `json:"task"`
 	Import           []string     `json:"import"`
-	Agent            *Agent       `json:"agent,omitempty"`
+	Agent            Agents       `json:"agent,omitempty"`
 }
 
-// Agent describes the ProjectInterface agent child process.
+// Agent describes one ProjectInterface agent: the child process that runs an
+// AgentServer and the identifier used for its socket.
 type Agent struct {
-	ChildExec string   `json:"child_exec"`
-	ChildArgs []string `json:"child_args"`
+	ChildExec  string   `json:"child_exec"`
+	ChildArgs  []string `json:"child_args"`
+	Identifier string   `json:"identifier"`
+}
+
+// Agents holds the PI `agent` field, which the protocol allows as either a
+// single object or an array of objects. Multiple agents run as separate child
+// processes connected to the same resource.
+type Agents []Agent
+
+// UnmarshalJSON accepts both the single-object and the array form of `agent`,
+// and leaves null entries empty so callers can detect "no agent declared".
+func (a *Agents) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		*a = nil
+		return nil
+	}
+	if trimmed[0] == '[' {
+		var list []Agent
+		if err := json.Unmarshal(data, &list); err != nil {
+			return err
+		}
+		*a = list
+		return nil
+	}
+	var single Agent
+	if err := json.Unmarshal(data, &single); err != nil {
+		return err
+	}
+	*a = Agents{single}
+	return nil
 }
 
 // Controller describes a PI controller entry.

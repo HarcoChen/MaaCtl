@@ -59,6 +59,53 @@ func TestLoadRejectsWrongInterfaceVersion(t *testing.T) {
 	}
 }
 
+// TestLoadAgentForms verifies the PI `agent` field is accepted as a single
+// object, as an array of objects, and as absent, including the optional
+// identifier of the single-agent form.
+func TestLoadAgentForms(t *testing.T) {
+	cases := []struct {
+		name       string
+		body       string
+		wantExec   []string
+		identifier string
+	}{
+		{name: "absent", body: `{"interface_version": 2}`},
+		{name: "null", body: `{"interface_version": 2, "agent": null}`},
+		{
+			name:       "object",
+			body:       `{"interface_version": 2, "agent": {"child_exec": "python", "child_args": ["./agent/main.py"], "identifier": "maactl-demo"}}`,
+			wantExec:   []string{"python"},
+			identifier: "maactl-demo",
+		},
+		{
+			name:     "array",
+			body:     `{"interface_version": 2, "agent": [{"child_exec": "python"}, {"child_exec": "node"}]}`,
+			wantExec: []string{"python", "node"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "interface.json")
+			writeFile(t, path, tc.body)
+			project, err := pi.Load(path)
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			if len(project.Agent) != len(tc.wantExec) {
+				t.Fatalf("got %d agents, want %d: %+v", len(project.Agent), len(tc.wantExec), project.Agent)
+			}
+			for i, exec := range tc.wantExec {
+				if project.Agent[i].ChildExec != exec {
+					t.Errorf("agent %d child_exec = %q, want %q", i, project.Agent[i].ChildExec, exec)
+				}
+			}
+			if len(tc.wantExec) == 1 && project.Agent[0].Identifier != tc.identifier {
+				t.Errorf("identifier = %q, want %q", project.Agent[0].Identifier, tc.identifier)
+			}
+		})
+	}
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {

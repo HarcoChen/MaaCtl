@@ -48,6 +48,7 @@ maactl interface --show `
 | `-r, --resource` | PI 资源名称（默认：第一个兼容资源） |
 | `--events` | 事件输出：`focus`（默认）/ `all` / `off` |
 | `--no-agent` | 不启动 ProjectInterface agent |
+| `--agent-log` | agent 输出：`term`（默认，输出到当前终端）/ `off`（丢弃）/ 目录（每个 agent 一个日志文件） |
 | `-o, --override` / `-O, --override-file` | 最终 Pipeline override 的 JSON / 文件 |
 | `--stop-after` | 运行指定时长后停止（duration，如 `10s`） |
 
@@ -154,6 +155,35 @@ maactl run -n "签到-开始签到" `
 - ADB 设备：检测到一个设备时自动选择；未检测到设备或检测到多个设备时要求 `--adb-address/-a`。
 
 `--stop-after` 适合验证会持续运行的任务；正常的有限 task 不需要该参数。
+
+## Agent 子进程
+
+`interface.json` 声明 `agent`（单个对象或对象数组）时，`maactl` 会在**资源加载完成后**启动并连接
+AgentServer，然后才连接控制器、执行任务；`--no-agent` 可跳过启动。
+
+- 启动：`child_exec` 为系统 PATH 中的可执行文件；含路径分隔符时相对 `interface.json` 所在目录解析，
+  子进程的工作目录同样是该目录。
+- 连接：`maactl` 创建通信套接字，把 identifier 追加为子进程的最后一个参数（`agent.identifier` 可指定
+  固定值，否则自动生成）。连接成功后，agent 注册的自定义识别与动作才会用于本次资源。
+- 静默启动：Windows 下子进程不创建控制台窗口，只在后台运行。
+- 输出：默认转发到当前终端（stdout/stderr 分别对应），每行加 `[agent]` 前缀（声明多个 agent 时为
+  `[agent 1]`、`[agent 2]`）；`--agent-log off` 丢弃；`--agent-log <目录>` 写入该目录下的 `agent.log`
+  （多个 agent 时为 `agent-N.log`，每次运行覆盖上一次，文件内不添加前缀）。目录无法创建或日志无法
+  写入时任务直接失败。
+- 连接结果：成功时输出 `Agent ... connected (custom actions: ...; custom recognitions: ...)`；
+  失败时以非零状态退出并输出 `agent ... failed to connect: ...`（子进程提前退出、被中断或长时间无法
+  连接）。
+
+```powershell
+# 默认：agent 输出转发到当前终端
+maactl run -t 打开游戏 -f D:\MAA_YYS -c Android -r 官服2 -a 127.0.0.1:16384
+
+# 不输出 agent 日志
+maactl run -t 打开游戏 -f D:\MAA_YYS --agent-log off
+
+# agent 日志写入目录，每个 agent 一个文件
+maactl run -t 打开游戏 -f D:\MAA_YYS --agent-log D:\logs\maactl
+```
 
 ## 事件与 focus 输出
 

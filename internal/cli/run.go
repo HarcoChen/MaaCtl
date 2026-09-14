@@ -21,6 +21,7 @@ type runOptions struct {
 	events                           string
 	stopAfter                        time.Duration
 	noAgent                          bool
+	agentLog                         string
 }
 
 func newRunCommand(global *Options) *cobra.Command {
@@ -82,6 +83,7 @@ func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
 	flags.StringVar(&opt.events, "events", "focus", i18n.Text("event output: focus (PI text), all (all sink events), or off", "事件输出：focus（仅 PI 文本）、all（全部 sink 事件）或 off"))
 	flags.DurationVar(&opt.stopAfter, "stop-after", 0, i18n.Text("stop a running task after this duration; for bounded runs and tests", "运行指定时长后停止任务；用于限时运行和测试"))
 	flags.BoolVar(&opt.noAgent, "no-agent", false, i18n.Text("do not start the ProjectInterface agent", "不启动 ProjectInterface agent"))
+	flags.StringVar(&opt.agentLog, "agent-log", "term", i18n.Text("agent output: term (default, print to this terminal), off (discard), or a directory for one log file per agent", "agent 输出：term（默认，输出到当前终端）、off（丢弃）或目录（每个 agent 一个日志文件）"))
 	flags.VisitAll(func(f *pflag.Flag) {
 		_ = flags.SetAnnotation(f.Name, help.SectionAnnotation, []string{help.SectionExecution})
 	})
