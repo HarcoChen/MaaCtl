@@ -60,48 +60,43 @@ type runOptions struct {
 	noAgent         bool
 	agentLog        string
 	continueOnError bool
-	yes             bool
 }
 
 // newRunCommand builds the `run` group.
 func newRunCommand(global *GlobalOptions) *cobra.Command {
-	var taskName, presetName, nodeName string
+	var taskName, nodeName string
 	var opt runOptions
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: i18n.Text("Run PI tasks, presets, or Pipeline nodes", "运行 PI task、preset 或 Pipeline 节点"),
 		Long: i18n.Text(`Executes a task declared in the ProjectInterface, every enabled task of a preset,
-or a Pipeline node directly.
+and a Pipeline node directly.
 
 The shortcut flags are exactly equivalent to the subcommands:
   maactl run -t <name>  ==  maactl run task <name>
-  maactl run -p <name>  ==  maactl run preset <name>
-  maactl run -n <name>  ==  maactl run node <name>`, `运行 ProjectInterface 中声明的 task、preset 中所有启用的 task，或直接运行
+  maactl run -n <name>  ==  maactl run node <name>
+
+Use "run preset <name>" to run a whole preset; --preset applies one preset's
+values to a single task.`, `运行 ProjectInterface 中声明的 task、preset 中所有启用的 task，或直接运行
 Pipeline 节点。
 
 快捷选项与子命令完全等价：
   maactl run -t <name>  ==  maactl run task <name>
-  maactl run -p <name>  ==  maactl run preset <name>
-  maactl run -n <name>  ==  maactl run node <name>`),
+  maactl run -n <name>  ==  maactl run node <name>
+
+运行整个 preset 请用 "run preset <name>"；--preset 只把某个 preset 的取值
+应用到单个 task。`),
 		Example: `  maactl run task "签到" -f D:\01_Projects\github\MaaMio --stop-after 30s
   maactl run -t 签到 --dry-run --explain
   maactl run preset ALL-IN --events all
   maactl run node "签到-开始签到" --events all`,
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
-			chosen := 0
-			for _, value := range []string{taskName, presetName, nodeName} {
-				if value != "" {
-					chosen++
-				}
-			}
 			switch {
-			case chosen > 1:
-				return exitErrorf(ExitUsage, "choose only one of --task/-t, --preset/-p, or --node/-n")
+			case taskName != "" && nodeName != "":
+				return exitErrorf(ExitUsage, "choose only one of --task/-t or --node/-n")
 			case taskName != "":
 				return runTask(global, taskName, opt)
-			case presetName != "":
-				return runPreset(global, presetName, opt)
 			case nodeName != "":
 				return runNode(global, nodeName, opt)
 			default:
@@ -110,7 +105,6 @@ Pipeline 节点。
 		},
 	}
 	cmd.Flags().StringVarP(&taskName, "task", "t", "", i18n.Text("shortcut for \"run task <task-name>\"", "等价于 \"run task <task-name>\""))
-	cmd.Flags().StringVarP(&presetName, "preset", "p", "", i18n.Text("shortcut for \"run preset <preset-name>\"", "等价于 \"run preset <preset-name>\""))
 	cmd.Flags().StringVarP(&nodeName, "node", "n", "", i18n.Text("shortcut for \"run node <node-name>\"", "等价于 \"run node <node-name>\""))
 	addRunFlags(cmd.PersistentFlags(), &opt)
 	cmd.AddCommand(
@@ -183,7 +177,7 @@ func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
 	flags.StringVar(&opt.gamepadType, "gamepad-type", "", i18n.Text("Gamepad type: Xbox360 or DualShock4", "Gamepad 类型：Xbox360 或 DualShock4"))
 	flags.StringArrayVar(&opt.optionValues, "option", nil, i18n.Text("option value as name=value (select/switch), name=a,b (checkbox), or name.field=value (input/hotkey); repeatable", "配置项取值：name=value（select/switch）、name=a,b（checkbox）或 name.field=value（input/hotkey）；可重复"))
 	flags.StringVar(&opt.optionFile, "option-file", "", i18n.Text("JSON file of option values", "包含配置项取值的 JSON 文件"))
-	flags.StringVarP(&opt.preset, "preset", "P", "", i18n.Text("apply a preset's option values to this task", "把 preset 的配置项取值应用于该任务"))
+	flags.StringVar(&opt.preset, "preset", "", i18n.Text("apply a preset's option values to this task", "把 preset 的配置项取值应用于该任务"))
 	flags.StringVarP(&opt.override, "override", "o", "", i18n.Text("final Pipeline override JSON", "最终 Pipeline override JSON"))
 	flags.StringVar(&opt.overrideFile, "override-file", "", i18n.Text("file with the final Pipeline override JSON", "包含最终 Pipeline override JSON 的文件"))
 	flags.StringArrayVar(&opt.overlay, "overlay", nil, i18n.Text("resource root loaded after the selected resource; repeatable", "在所选资源之后加载的资源根目录；可重复"))
@@ -198,7 +192,6 @@ func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
 	flags.BoolVar(&opt.noAgent, "no-agent", false, i18n.Text("do not start declared agent processes", "不启动声明的 agent 进程"))
 	flags.StringVar(&opt.agentLog, "agent-log", "term", i18n.Text("agent output: term, off, or a directory for one log file per agent", "agent 输出：term、off 或目录（每个 agent 一个日志文件）"))
 	flags.BoolVar(&opt.continueOnError, "continue-on-error", false, i18n.Text("keep running preset tasks after a failure", "preset 中某个 task 失败后继续运行"))
-	flags.BoolVar(&opt.yes, "yes", false, i18n.Text("do not wait for confirmation on modal focus messages", "遇到 modal focus 消息时不等待确认"))
 
 	help.MarkFlagsSection(flags, help.SectionExecution,
 		"resource", "controller", "adb-address", "name", "adb-path",
@@ -206,7 +199,7 @@ func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
 		"gamepad-type", "option", "option-file", "preset", "override", "override-file",
 		"overlay", "path", "events", "focus-display", "timeout", "stop-after",
 		"dry-run", "explain", "require-resource-hash", "no-agent", "agent-log",
-		"continue-on-error", "yes")
+		"continue-on-error")
 }
 
 // preparedRun is everything needed to execute one entry: the selected entities,
@@ -294,6 +287,15 @@ func parseCLIOptions(raw []string) (map[string]any, error) {
 		name, value, err := parseOptionFlag(item)
 		if err != nil {
 			return nil, err
+		}
+		// Repeated `--option name.field=value` flags build one field map.
+		if fields, ok := value.(map[string]any); ok {
+			if existing, ok := values[name].(map[string]any); ok {
+				for field, fieldValue := range fields {
+					existing[field] = fieldValue
+				}
+				continue
+			}
 		}
 		values[name] = value
 	}
@@ -505,6 +507,9 @@ func runTask(global *GlobalOptions, name string, opt runOptions) error {
 
 // runPreset runs every enabled task of a preset, in order.
 func runPreset(global *GlobalOptions, name string, opt runOptions) error {
+	if opt.preset != "" {
+		return exitErrorf(ExitUsage, "--preset does not apply to `run preset`; the positional name already selects the preset")
+	}
 	project, config, configPath, err := loadProjectAndConfig(global)
 	if err != nil {
 		return err

@@ -169,15 +169,15 @@ func TestRunHelpDocumentsWin32Flags(t *testing.T) {
 
 // The short flags must not be reused for a second meaning anywhere.
 func TestShortFlagsAreUnambiguous(t *testing.T) {
-	// The concrete guarantee: -v is --version, -p is --preset, -o is --override,
-	// and -t/-n are the run shortcuts.
+	// The concrete guarantee: -v is --version, -o is --override, -t/-n are the run
+	// shortcuts, and --preset/--option have no short form at all.
 	out := mustHelp(t, "run", "-h")
-	for _, want := range []string{"-p, --preset", "-o, --override", "-n, --node", "-t, --task", "-c, --controller", "-r, --resource"} {
+	for _, want := range []string{"      --preset string", "-o, --override", "-n, --node", "-t, --task", "-c, --controller", "-r, --resource"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("run help is missing %q", want)
 		}
 	}
-	for _, unwanted := range []string{"-p, --option", "-O, --override-file", "-v, --validate"} {
+	for _, unwanted := range []string{"-p, --option", "-O, --override-file", "-v, --validate", "-p, --preset"} {
 		if strings.Contains(out, unwanted) {
 			t.Errorf("run help should not contain %q\n%s", unwanted, out)
 		}

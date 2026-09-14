@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 
 	"maactl/internal/maafw/bundled"
 
@@ -21,7 +22,24 @@ func Init(libDir, logDir string) error {
 	if logDir != "" {
 		options = append(options, maa.WithLogDir(logDir))
 	}
-	return maa.Init(options...)
+	if err := maa.Init(options...); err != nil {
+		return err
+	}
+	loaded.Store(true)
+	return nil
+}
+
+// loaded records whether the native library has been initialized, so Version
+// can avoid calling into it from tests or from query-only commands.
+var loaded atomic.Bool
+
+// Version returns the MaaFramework version of the loaded runtime, falling back
+// to the version this build bundles when the runtime is not initialized yet.
+func Version() string {
+	if !loaded.Load() {
+		return BundledVersion()
+	}
+	return maa.Version()
 }
 
 // BundledVersion returns the MaaFramework version carried by this build, or ""

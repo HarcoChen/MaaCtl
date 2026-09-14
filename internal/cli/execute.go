@@ -278,7 +278,7 @@ func (p *preparedRun) agentEnv() ([]string, error) {
 		"PI_CLIENT_NAME=" + pi.ClientName,
 		"PI_CLIENT_VERSION=" + clientVersionValue,
 		"PI_CLIENT_LANGUAGE=" + p.global.Language(),
-		"PI_CLIENT_MAAFW_VERSION=" + maa.Version(),
+		"PI_CLIENT_MAAFW_VERSION=" + maafw.Version(),
 		"PI_VERSION=" + p.project.Version,
 		"PI_CONTROLLER=" + string(controllerJSON),
 		"PI_RESOURCE=" + string(resourceJSON),

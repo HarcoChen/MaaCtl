@@ -56,11 +56,10 @@ maactl [global flags] <group> [subcommand] [arguments] [flags]
   resource nodes               列出资源中的 Pipeline 节点
   resource hash                打印资源 hash，可校验 resource.hash
 
-  run task <task-name>         运行 PI task
+  run task <task-name>         运行 PI task（可用 --preset 套用预设取值）
   run preset <preset-name>     按 preset 顺序运行启用的 task
   run node <node-name>         直接运行 Pipeline 节点
   run -t <task-name>           快捷形式（等价 run task）
-  run -p <preset-name>         快捷形式（等价 run preset）
   run -n <node-name>           快捷形式（等价 run node）
 
   config show                  显示将生效的客户端配置及来源
@@ -74,7 +73,8 @@ maactl [global flags] <group> [subcommand] [arguments] [flags]
 - `pi` 有别名 `interface`，保留旧用户肌肉记忆；`interface` 不再接受 `--show` 之类的动作开关。
 - `device adb` / `device win32` 取代旧的 `adb devices` / `win32 devices`；旧命令保留一个版本，
   隐藏并打印迁移提示。
-- `run -t/-p/-n` 保留，因为它们是纯便捷形式，且与子命令语义完全一致。
+- `run -t/-n` 保留，因为它们是纯便捷形式，且与子命令语义完全一致；`run preset`
+  没有短参数，因为 `-p`/`--preset` 已经是「把预设取值应用到单个 task」的执行选项。
 
 ## 4. 全局选项
 
@@ -91,7 +91,9 @@ maactl [global flags] <group> [subcommand] [arguments] [flags]
 | `-h, --help` / `-v, --version` | 帮助 / 版本（`-v` 只在顶层是版本） |
 
 **短参数分配是不重叠的**：`-f/-l/-j/-h/-v` 属于全局；`-r/-c` 属于 `run`/`pi`/`resource` 的
-「resource/controller」语义；`-t/-p/-n` 属于 `run` 的快捷形式。任何命令内都不再出现第二个含义。
+「resource/controller」语义；`-t/-n` 属于 `run` 的快捷形式；`-o` 是 `--override`。
+`--option`、`--option-file`、`--override-file`、`--preset` 只在长参数里出现，
+避免同一字母被指到两件事上。
 
 ## 5. `pi` 子命令
 
@@ -143,7 +145,6 @@ maactl [global flags] <group> [subcommand] [arguments] [flags]
 | `--stop-after <duration>` | 运行指定时长后停止并视为成功（调试用） |
 | `--no-agent` / `--agent-log <term\|off\|dir>` | 与旧版一致 |
 | `--require-resource-hash` | `resource.hash` 不匹配时直接失败（默认仅告警） |
-| `--yes` | 非交互确认（`display: modal` 时不等待输入，直接继续） |
 
 ### 6.1 `run task <task-name>`
 
