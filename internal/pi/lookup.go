@@ -121,20 +121,6 @@ func (l *Loaded) FindPreset(name string, lang ...string) (*Preset, error) {
 	return nil, fmt.Errorf("preset %q not found; available: %s", name, Join(names))
 }
 
-// FindGroup resolves a group by name.
-func (l *Loaded) FindGroup(name string) (*Group, error) {
-	for i := range l.Group {
-		if l.Group[i].Name == name {
-			return &l.Group[i], nil
-		}
-	}
-	names := make([]string, len(l.Group))
-	for i := range l.Group {
-		names[i] = l.Group[i].Name
-	}
-	return nil, fmt.Errorf("group %q not found; available: %s", name, Join(names))
-}
-
 // TaskReasons lists why a task cannot run with the given controller/resource.
 // An empty result means the task is available.
 func (l *Loaded) TaskReasons(task *Task, ctrl *Controller, res *Resource) []string {

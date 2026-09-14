@@ -199,7 +199,7 @@ func (p *preparedRun) pretaskArgs(pretask *pi.Pretask) ([]string, error) {
 		value, ok := p.resolution.Value(name)
 		if !ok {
 			// The option is not part of this task's layers; resolve it on its own.
-			resolved, err := p.project.ResolveOption(name, p.optionRequest(nil, nil, nil))
+			resolved, err := p.project.ResolveOption(name, p.optionRequest(nil, nil))
 			if err != nil {
 				return nil, withExitCode(ExitUsage, err)
 			}
@@ -218,29 +218,6 @@ func (p *preparedRun) pretaskArgs(pretask *pi.Pretask) ([]string, error) {
 		return nil, withExitCode(ExitUsage, fmt.Errorf("serialize pretask options: %w", err))
 	}
 	return append(append([]string(nil), pretask.Args...), string(serialized)), nil
-}
-
-// optionRequest rebuilds a Resolve request without the task-specific values, for
-// options resolved outside the task's layer list.
-func (p *preparedRun) optionRequest(cliValues, optionFile map[string]any, presetEntry *pi.PresetTask) pi.Request {
-	var presetOptions map[string]any
-	if presetEntry != nil {
-		presetOptions = presetEntry.Option
-	}
-	var configTask map[string]any
-	if p.task != nil {
-		configTask = p.config.TaskOptions(p.task.Name)
-	}
-	return pi.Request{
-		ControllerName: p.controller.Name,
-		ResourceName:   p.resource.Name,
-		Task:           p.task,
-		ConfigGlobal:   p.config.GlobalOptions(),
-		ConfigTask:     configTask,
-		PresetOptions:  presetOptions,
-		OptionFile:     optionFile,
-		CLI:            cliValues,
-	}
 }
 
 // startAgents starts and connects the declared agents with the PI_* environment

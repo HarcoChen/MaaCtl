@@ -2,7 +2,6 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -201,10 +200,4 @@ func localizeCompletion(root *cobra.Command) {
 		}
 		return
 	}
-}
-
-// isExitError reports whether err already carries an exit code.
-func isExitError(err error) bool {
-	var exit *ExitError
-	return errors.As(err, &exit)
 }

@@ -171,11 +171,6 @@ func maskValue(value any) any {
 	}
 }
 
-// maskSelectionValues is used by --explain for resolved option values.
-func maskSelectionValues(values map[string]any) map[string]any {
-	return maskOptionValues(values)
-}
-
 // fileExists reports whether path points at an existing file.
 func fileExists(path string) bool {
 	if path == "" {

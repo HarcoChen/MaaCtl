@@ -263,22 +263,23 @@ global_option（按声明顺序）
 ## 8. 输出、事件与退出码
 
 - 查询类命令：文本为对齐表格（`--json` 为结构化 JSON）。
-- 运行类命令：进度与 focus 文本走 stdout；`--json` 时最终摘要也走 stdout，sink 事件为 JSON 行。
-- `run` 的成功摘要（`--json`）：
+- 运行类命令：进度与错误走 stderr；focus 文本与最终摘要走 stdout（方便
+  `maactl run ... > focus.log`）；加 `--json` 时 sink 事件为 JSON 行，最终摘要也是 JSON。
+- `run` 的摘要（`--json`）：
 
 ```json
 {
   "interface": "D:\\01_Projects\\github\\MaaMio\\interface.json",
   "resource": "base",
+  "resource_paths": ["D:\\01_Projects\\github\\MaaMio\\resource\\base"],
   "controller": "Android",
+  "task": "签到",
   "entry": "签到-开始签到",
-  "task_id": 3,
-  "status": "Succeeded",
+  "status": "success",
   "elapsed_ms": 12034,
-  "resource_hash": "…",
   "effective_override": { "…": {} },
   "selections": [
-    { "name": "复现次数", "source": "cli", "value": "x3" }
+    { "name": "复现次数", "layer": "task.option", "source": "cli", "value": "x3" }
   ]
 }
 ```

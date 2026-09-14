@@ -373,29 +373,16 @@ func readOverride(opt runOptions) (pi.Pipeline, error) {
 
 // resolveOptions builds the option request for one task and resolves it.
 func (p *preparedRun) resolveOptions(cliValues, optionFile map[string]any, presetEntry *pi.PresetTask) error {
-	var presetOptions map[string]any
+	request := p.optionRequest(cliValues, optionFile)
 	if presetEntry != nil {
-		presetOptions = presetEntry.Option
-	}
-	var configTask map[string]any
-	if p.task != nil {
-		configTask = p.config.TaskOptions(p.task.Name)
+		request.PresetOptions = presetEntry.Option
 	}
 	extra, err := readOverride(p.opt)
 	if err != nil {
 		return err
 	}
-	resolution, err := p.project.Resolve(pi.Request{
-		ControllerName: p.controller.Name,
-		ResourceName:   p.resource.Name,
-		Task:           p.task,
-		ConfigGlobal:   p.config.GlobalOptions(),
-		ConfigTask:     configTask,
-		PresetOptions:  presetOptions,
-		OptionFile:     optionFile,
-		CLI:            cliValues,
-		ExtraOverride:  extra,
-	})
+	request.ExtraOverride = extra
+	resolution, err := p.project.Resolve(request)
 	if err != nil {
 		return withExitCode(ExitUsage, err)
 	}
@@ -434,6 +421,25 @@ func prepareTaskRun(global *GlobalOptions, project *pi.Loaded, config *clientcon
 		return nil, err
 	}
 	return p, nil
+}
+
+// optionRequest builds the Resolve request for this run. Passing nil cliValues
+// and optionFile yields the request used for standalone option lookups such as
+// pretask arguments.
+func (p *preparedRun) optionRequest(cliValues, optionFile map[string]any) pi.Request {
+	var configTask map[string]any
+	if p.task != nil {
+		configTask = p.config.TaskOptions(p.task.Name)
+	}
+	return pi.Request{
+		ControllerName: p.controller.Name,
+		ResourceName:   p.resource.Name,
+		Task:           p.task,
+		ConfigGlobal:   p.config.GlobalOptions(),
+		ConfigTask:     configTask,
+		OptionFile:     optionFile,
+		CLI:            cliValues,
+	}
 }
 
 // prepareNodeRun resolves a bare Pipeline node. No task and no preset applies.
@@ -585,6 +591,9 @@ func printExplain(p *preparedRun) error {
 		return nil // included in the run summary instead
 	}
 	out := os.Stderr
+	if p.configPath != "" {
+		fmt.Fprintf(out, "config: %s\n", p.configPath)
+	}
 	fmt.Fprintf(out, "entry: %s\n", p.entry)
 	for _, selection := range p.resolution.Selections {
 		fmt.Fprintf(out, "  option %s = %v (%s, %s)", selection.Name, selection.MaskedValue(), selection.Layer, selection.Source)
