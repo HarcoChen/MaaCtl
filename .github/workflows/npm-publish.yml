@@ -65,6 +65,15 @@ jobs:
           $python = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } else { 'python' }
           & $python .github/scripts/release.py metadata --tag "$env:TAG" >> $env:GITHUB_OUTPUT
 
+      - name: Check the tag carries the npm package
+        shell: pwsh
+        run: |
+          # Tags cut before npm/ existed cannot be published; fail with a clear
+          # message instead of a cryptic error from the steps below.
+          if (-not (Test-Path npm/package.json)) {
+            throw "tag $env:TAG predates the npm/ package; there is nothing to publish to npm"
+          }
+
       - name: Set up Node
         uses: actions/setup-node@v6
         with:
