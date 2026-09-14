@@ -112,6 +112,20 @@ gh workflow run npm-publish.yml -f tag=v0.1.1 -f dry_run=true   # 只演练，�
 8. `npm publish --access public --provenance`，正式版打 `latest`，预发布按通道打
    `alpha`/`beta`/`rc` 标签（与 GitHub Release 的 Pre-release 语义一致）。
 
+发布成功后 registry 还要做几十秒到十几分钟的异步处理（30 MB 级的 exe 要扫描，带 provenance 的
+版本还要校验 attestation）。这期间 `npm view maactl@<version>` 依旧是 404，日志里会出现
+`Your package is being processed and may take a few minutes to become available.`——都属正常，
+不要据此判定发布失败，也不要急着重新 dispatch，等几分钟再查 dist-tags 即可：
+
+```powershell
+# 发布后的自查
+Invoke-RestMethod https://registry.npmjs.org/-/package/maactl/dist-tags
+npm view maactl dist-tags --registry=https://registry.npmjs.org
+
+# 校验 provenance 签名（默认源是 npmmirror 时必须显式指定 registry，否则取不到 TUF 公钥）
+npm audit signatures --registry=https://registry.npmjs.org
+```
+
 为何不是 `on: release: published`：Release 是 `release.yml` 用内置 `GITHUB_TOKEN` 创建的，而 GitHub
 不会为 `GITHUB_TOKEN` 导致的事件启动新的工作流，独立监听 Release 的工作流会永远不被触发。因此把发布
 逻辑写成可复用工作流，由 `release.yml` 在 Release 建好后直接调用；`workflow_dispatch` 与自动发布走的是
