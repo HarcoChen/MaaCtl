@@ -146,3 +146,18 @@ jobs:
           else
             gh release create "$TAG" dist/maactl.exe dist/maactl-lite.exe "${flags[@]}"
           fi
+
+  # The wiring from the npm task to the release is deliberate: the reusable
+  # workflow does the publishing, and this job only decides *when* it runs, so
+  # a pushed tag also produces the npm package.
+  npm:
+    name: Publish npm package
+    needs: [version, build, release]
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/npm-publish.yml
+    with:
+      tag: ${{ needs.version.outputs.tag }}
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

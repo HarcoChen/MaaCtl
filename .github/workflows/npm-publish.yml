@@ -1,0 +1,140 @@
+name: Publish npm package
+
+# Publishes the npm wrapper (npm/) for an already published GitHub Release.
+#
+# Two entry points:
+#   * workflow_call    – release.yml calls this right after it creates the
+#                        release, so pushing a `v*` tag ends up on npm.
+#   * workflow_dispatch – re-publish or repair a version by hand.
+#
+# Deliberately NOT `on: release: published`: the release is created by
+# release.yml with the built-in GITHUB_TOKEN, and GitHub never starts a new
+# workflow run from events caused by that token, so such a workflow would
+# silently never fire. Calling the logic as a reusable workflow from
+# release.yml is the reliable equivalent.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag of the release to publish (e.g. v0.1.0)
+        required: true
+        type: string
+    secrets:
+      NPM_TOKEN:
+        required: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag of the release to publish (e.g. v0.1.0)
+        required: true
+        type: string
+      dry_run:
+        description: Run the whole pipeline but skip the final npm publish
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  npm:
+    name: Publish maactl to npm
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write # npm publish --provenance needs an OIDC token
+    # Job-level env so the steps below can skip publishing when the secret is
+    # missing (forks, local dispatch) instead of failing.
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      TAG: ${{ inputs.tag }}
+      DRY_RUN: ${{ inputs.dry_run == true }}
+    steps:
+      - name: Checkout the released tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0 # release.py lists local tags
+
+      - name: Compute version metadata from the tag
+        id: meta
+        shell: pwsh
+        run: |
+          $python = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } else { 'python' }
+          & $python .github/scripts/release.py metadata --tag "$env:TAG" >> $env:GITHUB_OUTPUT
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Download the released executable
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          gh release download "$env:TAG" --pattern maactl.exe --dir dist --clobber
+          if (-not (Test-Path dist/maactl.exe)) {
+            throw "release $env:TAG has no maactl.exe asset; run the Release workflow first"
+          }
+
+      - name: Stamp the package version from the tag
+        working-directory: npm
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        shell: pwsh
+        run: |
+          npm version "$env:VERSION" --no-git-tag-version --allow-same-version
+          # The tarball must ship the executable built for this very tag.
+          $reported = "$(& ../dist/maactl.exe --version)"
+          Write-Host "dist/maactl.exe reports: $reported"
+          if ($reported -notmatch [regex]::Escape($env:VERSION)) {
+            throw "dist/maactl.exe reports '$reported', expected version $env:VERSION"
+          }
+          Write-Host "publishing maactl@$env:VERSION"
+
+      - name: Run wrapper tests
+        working-directory: npm
+        run: npm test
+
+      - name: Vendor the self-contained executable
+        working-directory: npm
+        run: node scripts/vendor-binary.js ../dist/maactl.exe
+
+      - name: Check the npm registry for an existing version
+        id: exists
+        working-directory: npm
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          npm view "maactl@$version" version *> $null
+          $already = if ($LASTEXITCODE -eq 0) { 'true' } else { 'false' }
+          Write-Host "maactl@${version} already on npm: $already"
+          "already=$already" >> $env:GITHUB_OUTPUT
+
+      - name: Publish to npm
+        if: env.NODE_AUTH_TOKEN != '' && env.DRY_RUN != 'true' && steps.exists.outputs.already == 'false'
+        working-directory: npm
+        shell: pwsh
+        env:
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+        run: |
+          $tag = if ($env:CHANNEL -eq 'stable') { 'latest' } else { $env:CHANNEL }
+          Write-Host "npm dist-tag: $tag"
+          npm publish --access public --provenance --tag "$tag"
+
+      - name: Report why nothing was published
+        if: env.NODE_AUTH_TOKEN == '' || env.DRY_RUN == 'true' || steps.exists.outputs.already == 'true'
+        shell: pwsh
+        run: |
+          if ($env:NODE_AUTH_TOKEN -eq '') {
+            Write-Warning 'NPM_TOKEN is not configured; add the repository secret to enable npm publishing.'
+          } elseif ($env:DRY_RUN -eq 'true') {
+            Write-Host 'dry run: skipped the final npm publish'
+          } else {
+            Write-Host 'This version is already on npm; nothing to publish (versions cannot be overwritten).'
+          }
