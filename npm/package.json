@@ -1,0 +1,52 @@
+{
+  "name": "maactl",
+  "version": "0.1.0",
+  "description": "MaaFramework / ProjectInterface v2 command-line client, runnable with npx on Windows",
+  "keywords": [
+    "maactl",
+    "maafw",
+    "maaframework",
+    "projectinterface",
+    "automation",
+    "adb",
+    "cli"
+  ],
+  "license": "MIT",
+  "author": "TanyaShue",
+  "homepage": "https://github.com/TanyaShue/MaaCtl#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TanyaShue/MaaCtl.git",
+    "directory": "npm"
+  },
+  "bugs": {
+    "url": "https://github.com/TanyaShue/MaaCtl/issues"
+  },
+  "bin": {
+    "maactl": "bin/maactl.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "scripts/",
+    "vendor/",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/install.js",
+    "vendor:binary": "node scripts/vendor-binary.js",
+    "check:vendor": "node scripts/vendor-binary.js --check",
+    "test": "node --test",
+    "prepublishOnly": "npm test && npm run check:vendor"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "win32"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

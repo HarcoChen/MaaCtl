@@ -1,0 +1,184 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const { test } = require('node:test');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const { download, downloadWithRetry, formatBytes } = require('../lib/download');
+const shared = require('../lib/binary');
+const { tempDir, withEnvAsync, isolatedPackage, withServer } = require('../test-support/helpers');
+
+test('download writes the body and removes the .part file', async () => {
+  const dest = path.join(tempDir(), 'maactl.exe');
+  const body = Buffer.from('MZ fake executable payload');
+
+  await withServer(
+    {
+      '/maactl.exe': (request, response) => {
+        response.writeHead(200, { 'content-length': body.length }).end(body);
+      },
+    },
+    async (base) => {
+      await download(`${base}/maactl.exe`, dest);
+    },
+  );
+
+  assert.deepEqual(fs.readFileSync(dest), body);
+  assert.equal(fs.existsSync(`${dest}.part`), false);
+});
+
+test('download follows redirects', async () => {
+  const dest = path.join(tempDir(), 'maactl.exe');
+  const body = Buffer.from('MZ redirected payload');
+
+  await withServer(
+    {
+      '/start': (request, response) => {
+        response.writeHead(302, { location: '/redirected' }).end();
+      },
+      '/redirected': (request, response) => {
+        response.writeHead(200).end(body);
+      },
+    },
+    async (base) => {
+      await download(`${base}/start`, dest);
+    },
+  );
+
+  assert.deepEqual(fs.readFileSync(dest), body);
+});
+
+test('download reports progress and fails on HTTP errors', async () => {
+  const dir = tempDir();
+  const dest = path.join(dir, 'maactl.exe');
+  const seen = [];
+
+  await withServer(
+    {
+      '/ok': (request, response) => {
+        response.writeHead(200, { 'content-length': 8 }).end('MZabcdef');
+      },
+    },
+    async (base) => {
+      await download(`${base}/ok`, dest, { onProgress: (received, total) => seen.push([received, total]) });
+      await assert.rejects(download(`${base}/missing`, path.join(dir, 'other.exe')), /HTTP 404/);
+    },
+  );
+
+  assert.ok(seen.length > 0);
+  assert.equal(seen.at(-1)[1], 8);
+  assert.equal(fs.existsSync(path.join(dir, 'other.exe')), false);
+  assert.equal(fs.existsSync(path.join(dir, 'other.exe.part')), false);
+});
+
+test('download rejects truncated responses', async () => {
+  const dest = path.join(tempDir(), 'maactl.exe');
+
+  await withServer(
+    {
+      '/truncated': (request, response) => {
+        // Promise 40 bytes, deliver 5, then drop the connection.
+        response.writeHead(200, { 'content-length': 40 });
+        response.write('MZabc');
+        response.destroy();
+      },
+    },
+    async (base) => {
+      await assert.rejects(download(`${base}/truncated`, dest), /truncated|aborted|socket hang up|ECONNRESET/);
+    },
+  );
+
+  assert.equal(fs.existsSync(dest), false);
+  assert.equal(fs.existsSync(`${dest}.part`), false);
+});
+
+test('downloadWithRetry retries transient failures', async () => {
+  const dest = path.join(tempDir(), 'maactl.exe');
+  let attempts = 0;
+
+  await withServer(
+    {
+      '/flaky': (request, response) => {
+        attempts += 1;
+        if (attempts < 3) {
+          response.writeHead(500).end('boom');
+          return;
+        }
+        response.writeHead(200).end('MZ ok');
+      },
+    },
+    async (base) => {
+      await downloadWithRetry(`${base}/flaky`, dest, { attempts: 3, retryDelayMs: 1 });
+    },
+  );
+
+  assert.equal(attempts, 3);
+  assert.equal(fs.readFileSync(dest, 'utf8'), 'MZ ok');
+});
+
+/** A byte payload that passes the PE header and size sanity checks. */
+function fakeExe() {
+  return Buffer.concat([Buffer.from('MZ'), Buffer.alloc(shared.MIN_BINARY_BYTES, 0x41)]);
+}
+
+test('ensureBinary downloads, verifies and then reuses the cache', async () => {
+  const payload = fakeExe();
+  let hits = 0;
+  // A fresh copy of the wrapper: no vendor/maactl.exe can short-circuit the
+  // download path in a developer's working copy.
+  const { binary } = isolatedPackage();
+
+  await withEnvAsync({ MAACTL_HOME: tempDir() }, () => withServer(
+    {
+      '/maactl.exe': (request, response) => {
+        hits += 1;
+        response.writeHead(200, { 'content-length': payload.length }).end(payload);
+      },
+    },
+    async (base) => {
+      process.env.MAACTL_BINARY_URL = `${base}/maactl.exe`;
+      const lines = [];
+      const verified = [];
+      const downloaded = await binary.ensureBinary({
+        write: (line) => lines.push(line),
+        verify: (file) => verified.push(file),
+      });
+
+      assert.equal(downloaded, binary.cacheExePath());
+      assert.equal(fs.statSync(downloaded).size, payload.length);
+      assert.deepEqual(verified, [downloaded]);
+      assert.equal(lines.length, 2, 'download start and completion are reported');
+
+      const again = await binary.ensureBinary({ verify: () => assert.fail('must not re-download') });
+      assert.equal(again, downloaded);
+    },
+  ));
+
+  assert.equal(hits, 1);
+});
+
+test('ensureBinary discards a downloaded binary that fails verification', async () => {
+  const { binary } = isolatedPackage();
+
+  await withEnvAsync({ MAACTL_HOME: tempDir() }, () => withServer(
+    {
+      '/broken.exe': (request, response) => response.writeHead(200).end('MZ broken'),
+    },
+    async (base) => {
+      process.env.MAACTL_BINARY_URL = `${base}/broken.exe`;
+      await assert.rejects(
+        binary.ensureBinary({ quiet: true, verify: () => { throw new Error('checksum mismatch'); } }),
+        /checksum mismatch/,
+      );
+      assert.equal(fs.existsSync(binary.cacheExePath()), false, 'failed download must not be cached');
+    },
+  ));
+});
+
+test('formatBytes renders readable sizes', () => {
+  assert.equal(formatBytes(0), '0 B');
+  assert.equal(formatBytes(512), '512 B');
+  assert.equal(formatBytes(1024), '1.0 KiB');
+  assert.equal(formatBytes(34 * 1024 * 1024), '34.0 MiB');
+});

@@ -22,6 +22,7 @@ internal/
 tools/packmaafw/       打包工具：下载/解包 release，只取 bin/ 生成 payload
 assets/                下载的 MaaFramework release 压缩包（不入库）
 maafw.version          本项目使用的 MaaFramework 版本
+npm/                   npm 分发包：npx maactl / npm i -g maactl 的参数转发器
 tests/                 跨包测试（CLI 端到端、PI 加载与打包）
 docs/                  设计文档
 maafw/                 本地 MaaFramework 运行库（不入库）
@@ -44,6 +45,9 @@ go build -o maactl-lite.exe ./cmd/maactl
 # 运行全部测试（两种构建各跑一遍）
 go test ./...
 go test -tags bundled ./...
+
+# npm 转发器（npx maactl）的测试，不联网、不依赖 exe
+cd npm; npm test; cd ..
 ```
 
 自带 MaaFramework 的构建约 33 MiB，轻量版约 8 MiB；两者的命令行行为完全一致，区别只在运行库来源。
@@ -106,6 +110,37 @@ go build -o maactl-lite.exe ./cmd/maactl               # 不携带 DLL，约 8 M
 ```
 
 升级 MaaFramework 只需改 `maafw.version`（或加 `-version`）后重新打包与构建；`--lib-dir`（`-l`）始终可覆盖自带运行库。带 `-tags bundled` 但未先生成 payload 时，构建仍会成功，但运行时会输出明确告警并回退到 `./maafw/bin`。
+
+## 通过 npm / npx 使用
+
+不想手动下载 exe 时，可以用 npm 分发包把 `maactl` 装成普通命令。它只是一个很薄的转发器：
+负责找到 `maactl.exe`（包内自带 / 缓存 / 按需下载），把参数原样传给 exe，并把退出码回传。
+
+```powershell
+# 免安装，直接用（首次会下载包；包内自带 MaaFramework）
+npx maactl -v
+npx maactl interface --tasks -f D:\01_Projects\github\MaaMio
+npx maactl adb devices
+
+# 或安装成全局命令，之后像 exe 一样使用
+npm install -g maactl
+maactl -v
+maactl run task "自动挂机卖蛋" -f D:\01_Projects\github\MaaMio --stop-after 10s
+```
+
+`maactl` 之后的参数全部原样透传（含中文、空格路径与 `-`/`--` 选项），工作目录也不被改变，
+所以默认的 `./interface.json` 仍然相对你执行命令的目录解析。只提供 Windows amd64 的 exe；
+可用 `MAACTL_BINARY` 指定已有 exe、`MAACTL_MIRROR` 使用镜像下载、`MAACTL_HOME` 覆盖缓存目录。
+细节见 [docs/npm-package.md](docs/npm-package.md) 与 [npm/README.md](npm/README.md)。
+
+开发时验证包装器（不需要发布）：
+
+```powershell
+cd npm
+npm test                                   # 单元测试，离线可跑
+npm run vendor:binary -- ..\maactl.exe      # 把本地构建的 exe 放进 vendor/，模拟发布包
+npx --yes --package . maactl -v
+```
 
 ## 查看项目
 
@@ -287,7 +322,33 @@ PI 中的 `import` 会随主 `interface.json` 一同加载。资源路径相对�
    - `dist/maactl.exe`：自带 MaaFramework（`-tags bundled`）；
    - `dist/maactl-lite.exe`：不携带 DLL；
 3. `changelog`：生成当前版本与上一个正式版之间的更新日志，按 feat/fix/perf/refactor/docs 等分组并附 commit 链接；
-4. `release`：等以上两个任务完成后统一创建 GitHub Release，并同时上传两个 exe。正式版发布为 Latest；`-alpha`/`-beta`/`-rc` 等预发布版本标记为 Pre-release（标题带通道名），不会成为 Latest。重复执行会更新已有 Release 并覆盖 exe。
+4. `release`：等以上两个任务完成后统一创建 GitHub Release，并同时上传两个 exe。正式版发布为 Latest；`-alpha`/`-beta`/`-rc` 等预发布版本标记为 Pre-release（标题带通道名），不会成为 Latest。重复执行会更新已有 Release 并覆盖 exe；
+5. `npm`：调用可复用工作流 `.github/workflows/npm-publish.yml`，把该 tag 对应的版本发布到 npm。正式版打 `latest`，预发布版本按通道打 `alpha`/`beta`/`rc`。
+
+### 发布到 npm
+
+`.github/workflows/npm-publish.yml` 是唯一的 npm 发布入口，有两种触发方式：
+
+- `workflow_call`（自动）：`release.yml` 在 `release` 任务完成、GitHub Release 建好之后调用它，因此推 `v*` tag 发版就会自动发 npm 包；
+- `workflow_dispatch`（手动）：重发或补发某个已发布的版本。
+
+```powershell
+gh workflow run npm-publish.yml -f tag=v0.1.0                  # 补发 / 重发
+gh workflow run npm-publish.yml -f tag=v0.1.1 -f dry_run=true   # 只演练，不真正 publish
+```
+
+工作流流程：checkout 该 tag → `release.py metadata` 算出 version/channel → `gh release download` 取回 Release 中已由 `build` 验证过的 `maactl.exe` → `npm version` 对齐包版本并校验 exe 的 `--version` 确实包含该版本号 → `npm test` → `node scripts/vendor-binary.js` 把 exe 放进 `npm/vendor/` → 查询 npm 上是否已有该版本（有则跳过）→ `npm publish --access public --provenance --tag <latest|alpha|beta|rc>`。
+
+没有用 `on: release: published` 是有原因的：Release 由 `release.yml` 用内置 `GITHUB_TOKEN` 创建，而 GitHub 不会为 `GITHUB_TOKEN` 导致的事件启动新的工作流，这样写的独立工作流会永远不触发。写成可复用工作流还有一个好处：发布逻辑只有一份，手动重发与自动发布的行为完全一致。
+
+发布需要仓库配置 `NPM_TOKEN`（npm Automation token，具备 publish 权限）secret；未配置时该任务只打印警告并跳过，不会让发版失败（fork 与本地触发都安全）。目标版本已存在于 npm 时同样跳过而不是报错——npm 不允许覆盖已发布的版本号。
+
+```powershell
+gh secret set NPM_TOKEN -b "<npm token>"
+gh secret list
+```
+`npm/**` 有改动时，`.github/workflows/npm.yml` 会单独跑包装器测试，并在 Node 22 上用轻量版 exe
+做一次 `npx --package . maactl -v` 冒烟。
 
 本地验证版本注入：
 
