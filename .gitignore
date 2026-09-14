@@ -1,6 +1,7 @@
 # Build outputs and runtime artifacts
 maactl.exe
 maactl
+/dist/
 /debug/
 
 # MaaFramework runtime is supplied locally or with releases
@@ -12,3 +13,4 @@ maactl
 *.code-workspace
 .DS_Store
 Thumbs.db
+__pycache__/

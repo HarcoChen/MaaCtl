@@ -12,7 +12,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "0.1.0"
+// version is the local development version; release builds inject the tag
+// version through -ldflags "-X main.version=<version>".
+var version = "0.1.0"
 
 type cliOptions struct {
 	libDir, interfacePath string

@@ -200,3 +200,19 @@ PI 中的 `import` 会随主 `interface.json` 一同加载。资源路径相对�
 - `resource hash`
 - `run preset <name>`
 - `--option/-p`、`--option-file`、`--overlay`、`--dry-run`、`--explain`
+
+## 发布
+
+推送符合 SemVer 的 tag（`v<major>.<minor>.<patch>[-alpha.N|-beta.N|-rc.N]`，匹配 `v[0-9]*`）会触发 `.github/workflows/release.yml`：
+
+1. `version`：校验 tag 是否符合 SemVer，计算是否预发布、预发布通道和上一个正式版 tag；
+2. `build`：在 Windows runner 上运行 `go test ./...`，并用 `-ldflags "-X main.version=<tag>"` 构建 `dist/maactl.exe`；
+3. `changelog`：生成当前版本与上一个正式版之间的更新日志，按 feat/fix/perf/refactor/docs 等分组并附 commit 链接；
+4. `release`：等以上两个任务完成后统一创建 GitHub Release。正式版发布为 Latest；`-alpha`/`-beta`/`-rc` 等预发布版本标记为 Pre-release（标题带通道名），不会成为 Latest。重复执行会更新已有 Release 并覆盖 exe。
+
+本地验证版本注入：
+
+```powershell
+go build -ldflags "-X main.version=1.2.3-beta.1" -o maactl.exe .
+./maactl.exe --version   # maactl version 1.2.3-beta.1
+```
