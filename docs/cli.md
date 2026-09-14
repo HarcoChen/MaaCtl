@@ -45,6 +45,10 @@ maactl interface --show `
 | --- | --- |
 | `-a, --adb-address` | ADB 设备序列号/地址，按 MaaToolkit 检测到的设备地址匹配（默认：唯一检测到的设备） |
 | `--name` | ADB 设备名称，按 MaaToolkit 检测到的设备名称匹配（默认：唯一检测到的设备） |
+| `--win32-handle` | Win32 窗口句柄，十进制或 `0x` 开头的十六进制 |
+| `--win32-class` | Win32 窗口类名正则（默认：PI `win32.class_regex`） |
+| `--win32-window` | Win32 窗口标题正则（默认：PI `win32.window_regex`） |
+| `--win32-screencap` / `--win32-mouse` / `--win32-keyboard` | 覆盖 Win32 截图 / 鼠标 / 键盘方式（默认：PI `win32` 配置） |
 | `-c, --controller` | PI 控制器名称（默认：唯一的控制器） |
 | `-r, --resource` | PI 资源名称（默认：第一个兼容资源） |
 | `--events` | 事件输出：`focus`（默认）/ `all` / `off` |
@@ -89,12 +93,13 @@ PI 中的 `import` 会随主 `interface.json` 一同加载。资源路径相对�
 
 ## 查看设备与资源
 
-先用 ADB 设备列表确定要使用的设备地址：
+先用 ADB 设备列表确定要使用的设备地址；运行 Win32 控制器时先用窗口列表确定窗口句柄、类名和标题：
 
 ```powershell
 maactl adb devices
 maactl adb devices --json
 maactl win32 devices
+maactl win32 devices --json
 ```
 
 加载资源并查看其元数据或可运行的 Pipeline 节点：
@@ -156,8 +161,38 @@ maactl run -n "签到-开始签到" `
 - ADB 设备：通过 `-a/--adb-address` 按地址、`--name` 按名称匹配 MaaToolkit 检测到的设备；两者都不给时，
   恰好检测到一个设备则自动选择，未检测到或多个设备时要求显式匹配。连接使用的 ADB 路径、config 与
   建议的截图/输入方式都取自该设备的检测结果（`maactl adb devices` 可查看地址与名称）。
+- Win32 窗口：通过 `--win32-handle`、`--win32-class`、`--win32-window` 匹配 MaaToolkit 检测到的桌面
+  窗口；都不给时回退到 PI 控制器的 `win32.class_regex` / `win32.window_regex`，再都不给时恰好一个窗口
+  则自动选择。多个窗口同时匹配会报错并列出候选项，此时用更精确的正则或句柄缩小范围。
 
 `--stop-after` 适合验证会持续运行的任务；正常的有限 task 不需要该参数。
+
+### Win32 控制器
+
+PI controller 的 `type` 为 `Win32` 时，`maactl` 会操作桌面窗口而非 ADB 设备。窗口选择优先级为
+命令行（`--win32-handle` / `--win32-class` / `--win32-window`，多个条件同时生效）> PI
+`win32.class_regex` / `win32.window_regex` > 唯一检测到的窗口。
+
+截图与输入方式来自 PI 的 `win32.screencap` / `win32.mouse` / `win32.keyboard`，可用同名命令行选项覆盖：
+
+- 截图默认启用全部方式，MaaFramework 会自动选最快可用的一种。
+- 鼠标与键盘默认为 `Seize`（兼容性最高、无需管理员权限）。Win32 输入方式不能按位或组合，只能选一种。
+
+```powershell
+# 按 PI 的 win32 配置运行 Win32 控制器
+maactl run -c PC -t 每日任务 -f D:\projects\desktop
+
+# 显式指定窗口，并换用后台截图方式
+maactl run -c PC -t 每日任务 -f D:\projects\desktop `
+  --win32-class UnityWndClass --win32-window "原神" `
+  --win32-screencap FramePool --win32-mouse SendMessage
+
+# 用句柄精确定位窗口（maactl win32 devices --json 可读到 handle）
+maactl run -c PC -n Login --win32-handle 0x1A2B3C
+```
+
+当前构建只提供 `Adb` 与 `Win32` 两种控制器的构造能力；PI 中出现 `MacOS`、`PlayCover`、`Gamepad`、
+`Linux` 等类型时会直接报错，而不是在连接阶段失败。
 
 ## Agent 子进程
 

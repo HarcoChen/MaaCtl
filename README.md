@@ -1,8 +1,8 @@
 # MaaCtl
 
 `maactl` 是 [MaaFramework](https://github.com/MaaXYZ/MaaFramework) 的命令行客户端。它加载
-ProjectInterface v2（PI）项目，查看控制器、资源与任务，并在指定 ADB 设备上运行 PI task 或
-Pipeline 节点。
+ProjectInterface v2（PI）项目，查看控制器、资源与任务，并在指定的 ADB 设备或 Win32 窗口上运行
+PI task 或 Pipeline 节点。
 
 - 只提供 **Windows amd64** 的可执行文件；是否自带 MaaFramework 不影响命令行行为。
 - 所有选项都以 `-` 或 `--` 开头，只有命令名和 task/node 名称使用位置参数。
@@ -65,6 +65,7 @@ maactl -v                                        # 版本（自带版本会同�
 maactl interface --show                          # 读当前目录的 ./interface.json
 maactl interface --tasks -f D:\path\to\project   # 列出 PI 中的 task
 maactl adb devices                               # 查看 ADB 设备
+maactl win32 devices                             # 查看 Win32 桌面窗口
 maactl run task "任务名" -f D:\path\to\project    # 运行 task
 maactl help run                                  # 查看某条命令的帮助
 ```
@@ -85,6 +86,9 @@ maactl help run                                  # 查看某条命令的帮助
 | `-t, --task` / `-n, --node` | 运行 PI 中的 task，或直接运行 Pipeline 节点 |
 | `-a, --adb-address` | ADB 设备序列号/地址，用 MaaToolkit 检测到的设备信息匹配 |
 | `--name` | ADB 设备名称（`maactl adb devices` 显示的名称），用 MaaToolkit 检测到的设备信息匹配 |
+| `--win32-handle` | Win32 窗口句柄（十进制或 `0x` 开头的十六进制） |
+| `--win32-class` / `--win32-window` | Win32 窗口类名 / 标题正则（`maactl win32 devices` 可查看） |
+| `--win32-screencap` / `--win32-mouse` / `--win32-keyboard` | 覆盖 Win32 截图与输入方式（默认取 PI `win32` 配置） |
 | `-c, --controller` / `-r, --resource` | 指定 PI controller 与资源 |
 | `--events` | 事件输出：`focus`（默认）/ `all` / `off` |
 | `--stop-after` | 运行指定时长后停止，适合验证与限时运行 |
@@ -111,4 +115,4 @@ maactl help run                                  # 查看某条命令的帮助
 
 - 操作系统：Windows 10/11 x64（当前只提供该平台的 exe）。
 - 用 npm 方式安装时额外需要 Node.js ≥ 22。
-- 运行 ADB 任务时设备需已连接，且 `adb devices` 能看到设备。
+- 运行 ADB 任务时设备需已连接，且 `adb devices` 能看到设备；运行 Win32 任务时目标窗口需已打开。

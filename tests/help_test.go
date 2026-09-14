@@ -152,6 +152,24 @@ func TestPlannedFeaturesAreGrouped(t *testing.T) {
 	}
 }
 
+func TestRunHelpDocumentsWin32Flags(t *testing.T) {
+	runHelp := mustHelp(t, "run", "-h")
+	for _, flag := range []string{
+		"--win32-handle", "--win32-class", "--win32-window",
+		"--win32-screencap", "--win32-mouse", "--win32-keyboard",
+	} {
+		if n := strings.Count(runHelp, flag); n != 1 {
+			t.Errorf("win32 flag %s listed %d times in run help\n%s", flag, n, runHelp)
+		}
+	}
+	taskHelp := mustHelp(t, "run", "task", "-h")
+	for _, flag := range []string{"--win32-handle", "--win32-screencap"} {
+		if !strings.Contains(taskHelp, flag) {
+			t.Errorf("win32 flag %s missing from inherited run task help\n%s", flag, taskHelp)
+		}
+	}
+}
+
 func TestResourceHelpAttributesResourceFlag(t *testing.T) {
 	parent := mustHelp(t, "resource", "-h")
 	if !strings.Contains(parent, "-r, --resource string") {

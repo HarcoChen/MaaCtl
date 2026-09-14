@@ -17,6 +17,10 @@ import (
 type runOptions struct {
 	resource, controller, adbAddress string
 	adbName                          string
+	win32Handle, win32Class          string
+	win32Window                      string
+	win32Screencap, win32Mouse       string
+	win32Keyboard                    string
 	override, overrideFile           string
 	optionValues, overlay            []string
 	events                           string
@@ -75,6 +79,12 @@ func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
 	flags.StringVarP(&opt.controller, "controller", "c", "", i18n.Text("PI controller name (default: only controller)", "PI 控制器名称（默认：唯一的控制器）"))
 	flags.StringVarP(&opt.adbAddress, "adb-address", "a", "", i18n.Text("ADB device serial/address (default: only detected device)", "ADB 设备序列号/地址（默认：唯一检测到的设备）"))
 	flags.StringVar(&opt.adbName, "name", "", i18n.Text("ADB device name reported by MaaToolkit (default: only detected device)", "MaaToolkit 报告的设备名称（默认：唯一检测到的设备）"))
+	flags.StringVar(&opt.win32Handle, "win32-handle", "", i18n.Text("Win32 window handle in decimal or 0x-prefixed hex (default: PI win32 regexes, then the only window)", "Win32 窗口句柄，十进制或 0x 开头的十六进制（默认：PI win32 正则，其次唯一窗口）"))
+	flags.StringVar(&opt.win32Class, "win32-class", "", i18n.Text("Win32 window class regex (default: PI win32.class_regex)", "Win32 窗口类名正则（默认：PI win32.class_regex）"))
+	flags.StringVar(&opt.win32Window, "win32-window", "", i18n.Text("Win32 window title regex (default: PI win32.window_regex)", "Win32 窗口标题正则（默认：PI win32.window_regex）"))
+	flags.StringVar(&opt.win32Screencap, "win32-screencap", "", i18n.Text("Win32 screencap method (default: PI win32.screencap, then all methods)", "Win32 截图方式（默认：PI win32.screencap，其次全部方式）"))
+	flags.StringVar(&opt.win32Mouse, "win32-mouse", "", i18n.Text("Win32 mouse method (default: PI win32.mouse, then Seize)", "Win32 鼠标方式（默认：PI win32.mouse，其次 Seize）"))
+	flags.StringVar(&opt.win32Keyboard, "win32-keyboard", "", i18n.Text("Win32 keyboard method (default: PI win32.keyboard, then Seize)", "Win32 键盘方式（默认：PI win32.keyboard，其次 Seize）"))
 	flags.StringVarP(&opt.override, "override", "o", "", i18n.Text("final Pipeline override JSON", "最终 Pipeline override JSON"))
 	flags.StringVarP(&opt.overrideFile, "override-file", "O", "", i18n.Text("file containing the final Pipeline override JSON", "包含最终 Pipeline override JSON 的文件"))
 	flags.StringArrayVarP(&opt.optionValues, "option", "p", nil, i18n.Text("option value as name=<JSON>; repeatable", "option 值，格式 name=<JSON>；可重复"))

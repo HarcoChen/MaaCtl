@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"strconv"
+	"unsafe"
 
 	"maactl/internal/i18n"
 	"maactl/internal/maafw"
@@ -107,7 +108,7 @@ func listWin32(jsonOutput bool) error {
 	if jsonOutput {
 		out := make([]desktopWindowOutput, 0, len(windows))
 		for _, w := range windows {
-			out = append(out, desktopWindowOutput{Handle: strconv.FormatUint(uint64(uintptr(w.Handle)), 16), ClassName: w.ClassName, WindowName: w.WindowName})
+			out = append(out, desktopWindowOutput{Handle: win32HandleString(w.Handle), ClassName: w.ClassName, WindowName: w.WindowName})
 		}
 		return output.Stdout(out)
 	}
@@ -119,7 +120,13 @@ func listWin32(jsonOutput bool) error {
 	for i, w := range windows {
 		fmt.Printf("[%d] %s\n", i+1, output.Value(w.WindowName))
 		fmt.Printf("    class: %s\n", output.Value(w.ClassName))
-		fmt.Printf("    handle: 0x%s\n", strconv.FormatUint(uint64(uintptr(w.Handle)), 16))
+		fmt.Printf("    handle: %s\n", win32HandleString(w.Handle))
 	}
 	return nil
+}
+
+// win32HandleString renders a window handle the way --win32-handle accepts it,
+// so the value shown by "maactl win32 devices" can be passed back verbatim.
+func win32HandleString(handle unsafe.Pointer) string {
+	return "0x" + strconv.FormatUint(uint64(uintptr(handle)), 16)
 }

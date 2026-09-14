@@ -51,6 +51,41 @@ func TestLoadMergesImportsAndAllowsComments(t *testing.T) {
 	}
 }
 
+// TestLoadWin32Controller verifies the win32 controller block is parsed, since
+// it carries the window selectors and input methods used at run time.
+func TestLoadWin32Controller(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "interface.json")
+	writeFile(t, path, `{
+		"interface_version": 2,
+		"controller": [{
+			"name": "PC",
+			"type": "Win32",
+			"win32": {
+				"class_regex": "UnityWndClass",
+				"window_regex": "原神",
+				"mouse": "SendMessage",
+				"keyboard": "PostMessage",
+				"screencap": "FramePool"
+			}
+		}],
+		"resource": [{"name": "base", "path": ["resource/base"], "controller": ["PC"]}]
+	}`)
+	project, err := pi.Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	ctrl, err := project.FindController("")
+	if err != nil {
+		t.Fatalf("find controller: %v", err)
+	}
+	if ctrl.Type != "Win32" || ctrl.Win32.ClassRegex != "UnityWndClass" || ctrl.Win32.WindowRegex != "原神" {
+		t.Fatalf("unexpected win32 window config: %+v", ctrl.Win32)
+	}
+	if ctrl.Win32.Mouse != "SendMessage" || ctrl.Win32.Keyboard != "PostMessage" || ctrl.Win32.Screencap != "FramePool" {
+		t.Errorf("unexpected win32 method config: %+v", ctrl.Win32)
+	}
+}
+
 func TestLoadRejectsWrongInterfaceVersion(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "interface.json")
 	writeFile(t, path, `{"interface_version": 1}`)

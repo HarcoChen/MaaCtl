@@ -59,16 +59,28 @@ func (a *Agents) UnmarshalJSON(data []byte) error {
 
 // Controller describes a PI controller entry.
 type Controller struct {
-	Name  string    `json:"name"`
-	Label string    `json:"label"`
-	Type  string    `json:"type"`
-	Adb   AdbConfig `json:"adb"`
+	Name  string      `json:"name"`
+	Label string      `json:"label"`
+	Type  string      `json:"type"`
+	Adb   AdbConfig   `json:"adb"`
+	Win32 Win32Config `json:"win32"`
 }
 
 // AdbConfig holds the ADB screencap and input method names from a controller.
 type AdbConfig struct {
 	Screencap string `json:"screencap"`
 	Input     string `json:"input"`
+}
+
+// Win32Config holds the Win32 controller configuration from PI. The regex
+// fields select the target desktop window; the method fields override the
+// defaults maactl uses when they are empty.
+type Win32Config struct {
+	ClassRegex  string `json:"class_regex"`
+	WindowRegex string `json:"window_regex"`
+	Mouse       string `json:"mouse"`
+	Keyboard    string `json:"keyboard"`
+	Screencap   string `json:"screencap"`
 }
 
 // Resource describes a PI resource entry.
