@@ -45,15 +45,15 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Test
-        run: |
-          go test ./...
-          go test -tags bundled ./...
       - name: Bundle MaaFramework
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: go run ./tools/packmaafw
+      - name: Test
+        run: |
+          go test ./...
+          go test -tags bundled ./...
       - name: Build executables
         shell: pwsh
         env:
