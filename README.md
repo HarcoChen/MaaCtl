@@ -4,10 +4,33 @@
 
 当前版本支持 ADB 任务执行。所有选项都以 `-` 或 `--` 开头；只有命令名和 task/node 名称使用位置参数。
 
-## 构建与目录
+## 项目结构
+
+```text
+cmd/maactl/            程序入口（main 包，仅解析参数并调用 cli）
+internal/
+  cli/                 命令树：root、adb/win32、interface、resource、run、execute
+  pi/                  ProjectInterface v2 的数据模型、加载与查找
+  event/               sink 事件输出与 focus 文本渲染
+  help/                帮助渲染器（分区、继承来源、planned 标记）
+  i18n/                帮助语言检测与本地化文本
+  maafw/               MaaFramework 运行库定位与初始化
+  output/              文本与 JSON 输出辅助
+  table/               终端宽度对齐的表格渲染
+tests/                 跨包测试（CLI 端到端与 PI 加载）
+docs/                  设计文档
+maafw/                 本地 MaaFramework 运行库（不入库）
+```
+
+`internal/` 内的包只在本模块可用；`tests/` 通过 `internal/cli` 等导出接口运行 CLI，因此不需要把内部实现暴露给外部。
+
+## 构建
 
 ```powershell
-go build -o maactl.exe .
+go build -o maactl.exe ./cmd/maactl
+
+# 运行全部测试（包括 tests/ 下的 CLI 端到端测试）
+go test ./...
 ```
 
 默认从**当前工作目录**读取 PI，而不是从 `maactl.exe` 所在目录读取：
@@ -213,6 +236,6 @@ PI 中的 `import` 会随主 `interface.json` 一同加载。资源路径相对�
 本地验证版本注入：
 
 ```powershell
-go build -ldflags "-X main.version=1.2.3-beta.1" -o maactl.exe .
+go build -ldflags "-X main.version=1.2.3-beta.1" -o maactl.exe ./cmd/maactl
 ./maactl.exe --version   # maactl version 1.2.3-beta.1
 ```

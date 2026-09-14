@@ -1,4 +1,4 @@
-package main
+package tests
 
 import (
 	"bytes"
@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"maactl/internal/pi"
+	"maactl/internal/table"
 )
 
 func interfaceFixture(t *testing.T) string {
@@ -26,16 +29,6 @@ func interfaceFixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return path
-}
-
-func interfaceOutput(args ...string) (string, error) {
-	var out bytes.Buffer
-	cmd := newRootCommand()
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs(args)
-	err := cmd.Execute()
-	return out.String(), err
 }
 
 func TestInterfaceActionFlags(t *testing.T) {
@@ -118,7 +111,7 @@ func TestInterfaceTasksJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var tasks []task
+	var tasks []pi.Task
 	if err := json.Unmarshal([]byte(output), &tasks); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, output)
 	}
@@ -141,11 +134,11 @@ func TestInterfaceTableAlignment(t *testing.T) {
 		t.Fatalf("got:\n%s\nwant:\n%s", output, want)
 	}
 	var out bytes.Buffer
-	if err := printInterfaceTable(&out, []string{"名称 (name)"}, nil); err != nil || !strings.Contains(out.String(), "（无数据）") {
+	if err := table.Print(&out, []string{"名称 (name)"}, nil); err != nil || !strings.Contains(out.String(), "（无数据）") {
 		t.Fatalf("empty list = %q, err = %v", out.String(), err)
 	}
 	out.Reset()
-	if err := printInterfaceTable(&out, []string{"name"}, [][]string{{"a\tb\nc"}}); err != nil || !strings.Contains(out.String(), `a\tb\nc`) {
+	if err := table.Print(&out, []string{"name"}, [][]string{{"a\tb\nc"}}); err != nil || !strings.Contains(out.String(), `a\tb\nc`) {
 		t.Fatalf("multiline cell = %q, err = %v", out.String(), err)
 	}
 }

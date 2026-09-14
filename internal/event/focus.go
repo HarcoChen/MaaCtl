@@ -1,14 +1,15 @@
-package main
+// Package event renders and prints MaaFramework tasker and context sink events.
+package event
 
 import (
 	"fmt"
 	"strings"
 )
 
-// renderFocus returns the log message declared for an exact MaaFramework callback.
+// RenderFocus returns the log message declared for an exact MaaFramework callback.
 // A string focus is shorthand for {content: string, display: "log"}; an object
 // is emitted here only when its display includes the console's log channel.
-func renderFocus(message string, detail any) string {
+func RenderFocus(message string, detail any) string {
 	values, ok := toObject(detail)
 	if !ok {
 		return ""

@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package i18n
 
 import "syscall"
 
@@ -9,12 +9,12 @@ var (
 	procGetUserDefaultUILanguage = kernel32.NewProc("GetUserDefaultUILanguage")
 )
 
-// systemLanguage returns the primary language of the Windows UI language.
-func systemLanguage() language {
+// detectSystemLanguage returns the primary language of the Windows UI language.
+func detectSystemLanguage() Language {
 	id, _, _ := procGetUserDefaultUILanguage.Call()
 	const langChinese = 0x04 // LANG_CHINESE primary language id
 	if uint16(id)&0x3ff == langChinese {
-		return langZH
+		return ZH
 	}
-	return langEN
+	return EN
 }

@@ -1,16 +1,34 @@
-package main
+package tests
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"testing"
+
+	"maactl/internal/cli"
 )
+
+// testVersion is injected into the command tree instead of the real build
+// version so version assertions are stable.
+const testVersion = "test"
 
 // TestMain pins the help language so assertions are deterministic on any
 // system locale; individual tests override MAACTL_LANG when needed.
 func TestMain(m *testing.M) {
 	_ = os.Setenv("MAACTL_LANG", "en")
 	os.Exit(m.Run())
+}
+
+// interfaceOutput runs the CLI in-process and returns its combined output.
+func interfaceOutput(args ...string) (string, error) {
+	var out bytes.Buffer
+	cmd := cli.NewRootCommand(testVersion)
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	return out.String(), err
 }
 
 func mustHelp(t *testing.T, args ...string) string {
@@ -53,7 +71,7 @@ func TestRootHelpIsCompactOverview(t *testing.T) {
 
 func TestVersionFlag(t *testing.T) {
 	out := mustHelp(t, "--version")
-	if !strings.Contains(out, "maactl version "+version) {
+	if !strings.Contains(out, "maactl version "+testVersion) {
 		t.Fatalf("unexpected version output: %q", out)
 	}
 }
@@ -215,7 +233,7 @@ func TestRunFlagsParseAroundSubcommands(t *testing.T) {
 		{"run", "-r", "base", "task", "demo"},
 		{"run", "-t", "demo", "-r", "base"},
 	} {
-		root := newRootCommand()
+		root := cli.NewRootCommand(testVersion)
 		target, rest, err := root.Find(args)
 		if err != nil {
 			t.Fatalf("%v: find: %v", args, err)

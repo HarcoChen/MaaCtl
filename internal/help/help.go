@@ -1,10 +1,14 @@
-package main
+// Package help renders the compact maactl help layout: command descriptions,
+// grouped flags, and separately listed planned features.
+package help
 
 import (
 	"fmt"
 	"io"
 	"regexp"
 	"strings"
+
+	"maactl/internal/i18n"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -13,39 +17,49 @@ import (
 // Help renderer annotations. They let the renderer group planned features and
 // shared execution flags without parsing description text.
 const (
-	plannedAnnotation = "maactl.planned"
-	sectionAnnotation = "maactl.help.section"
+	PlannedAnnotation = "maactl.planned"
+	SectionAnnotation = "maactl.help.section"
 
-	sectionAction    = "action"
-	sectionExecution = "execution"
+	// SectionAction groups action-selecting flags such as interface --show.
+	SectionAction = "action"
+	// SectionExecution groups execution flags shared by run and its subcommands.
+	SectionExecution = "execution"
 )
 
-// setFullHelp replaces cobra's default help with a compact layout:
+// SetFullHelp replaces cobra's default help with a compact layout:
 // command descriptions are always shown, flags are grouped by owner, and
 // planned features are listed separately.
-func setFullHelp(root *cobra.Command) {
+func SetFullHelp(root *cobra.Command) {
 	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
 		renderHelp(cmd, cmd.OutOrStdout())
 	})
 }
 
-func markCommandPlanned(cmd *cobra.Command) {
+// MarkCommandPlanned flags a command as published but not implemented yet.
+func MarkCommandPlanned(cmd *cobra.Command) {
 	if cmd.Annotations == nil {
 		cmd.Annotations = map[string]string{}
 	}
-	cmd.Annotations[plannedAnnotation] = "true"
+	cmd.Annotations[PlannedAnnotation] = "true"
 }
 
-func markFlagsPlanned(flags *pflag.FlagSet, names ...string) {
+// MarkFlagsPlanned flags flags as published but not implemented yet.
+func MarkFlagsPlanned(flags *pflag.FlagSet, names ...string) {
 	for _, name := range names {
-		_ = flags.SetAnnotation(name, plannedAnnotation, []string{"true"})
+		_ = flags.SetAnnotation(name, PlannedAnnotation, []string{"true"})
 	}
 }
 
-func markFlagsSection(flags *pflag.FlagSet, section string, names ...string) {
+// MarkFlagsSection assigns flags to a help section.
+func MarkFlagsSection(flags *pflag.FlagSet, section string, names ...string) {
 	for _, name := range names {
-		_ = flags.SetAnnotation(name, sectionAnnotation, []string{section})
+		_ = flags.SetAnnotation(name, SectionAnnotation, []string{section})
 	}
+}
+
+// CommandPlanned reports whether a command is marked as planned.
+func CommandPlanned(cmd *cobra.Command) bool {
+	return cmd.Annotations[PlannedAnnotation] == "true"
 }
 
 func renderHelp(cmd *cobra.Command, out io.Writer) {
@@ -75,7 +89,7 @@ func writeDescription(b *strings.Builder, cmd *cobra.Command) {
 }
 
 func writeUsage(b *strings.Builder, cmd *cobra.Command) {
-	writeHeading(b, localized("Usage:", "用法："))
+	writeHeading(b, i18n.Text("Usage:", "用法："))
 	if cmd == cmd.Root() {
 		fmt.Fprintf(b, "  %s [command]\n", cmd.CommandPath())
 		return
@@ -104,14 +118,14 @@ func writeCommands(b *strings.Builder, cmd *cobra.Command) {
 	for i, child := range children {
 		names[i] = commandDisplayName(child)
 		descriptions[i] = child.Short
-		if commandPlanned(child) {
-			descriptions[i] = strings.TrimSpace(descriptions[i] + localized(" (planned)", "（计划中）"))
+		if CommandPlanned(child) {
+			descriptions[i] = strings.TrimSpace(descriptions[i] + i18n.Text(" (planned)", "（计划中）"))
 		}
 		if len(names[i]) > width {
 			width = len(names[i])
 		}
 	}
-	writeHeading(b, localized("Commands:", "命令："))
+	writeHeading(b, i18n.Text("Commands:", "命令："))
 	for i := range children {
 		fmt.Fprintf(b, "  %-*s   %s\n", width, names[i], descriptions[i])
 	}
@@ -148,9 +162,9 @@ func writeFlags(b *strings.Builder, cmd *cobra.Command) {
 			planned = append(planned, f)
 		case isOwn:
 			switch flagSection(f) {
-			case sectionAction:
+			case SectionAction:
 				ownActions = append(ownActions, f)
-			case sectionExecution:
+			case SectionExecution:
 				ownExecution = append(ownExecution, f)
 			default:
 				ownFlags = append(ownFlags, f)
@@ -166,23 +180,23 @@ func writeFlags(b *strings.Builder, cmd *cobra.Command) {
 	cmd.NonInheritedFlags().VisitAll(func(f *pflag.Flag) { add(f, true) })
 	cmd.InheritedFlags().VisitAll(func(f *pflag.Flag) { add(f, false) })
 
-	writeFlagGroup(b, localized("Flags:", "选项："), ownFlags)
-	writeFlagGroup(b, localized("Actions:", "操作："), ownActions)
-	writeFlagGroup(b, localized("Execution Flags (shared with subcommands):", "执行选项（与子命令共用）："), ownExecution)
+	writeFlagGroup(b, i18n.Text("Flags:", "选项："), ownFlags)
+	writeFlagGroup(b, i18n.Text("Actions:", "操作："), ownActions)
+	writeFlagGroup(b, i18n.Text("Execution Flags (shared with subcommands):", "执行选项（与子命令共用）："), ownExecution)
 	for _, owner := range inheritedOrder {
 		var flags, execution []*pflag.Flag
 		for _, f := range inherited[owner] {
-			if flagSection(f) == sectionExecution {
+			if flagSection(f) == SectionExecution {
 				execution = append(execution, f)
 			} else {
 				flags = append(flags, f)
 			}
 		}
-		writeFlagGroup(b, fmt.Sprintf(localized("Inherited Flags (from %q):", "继承选项（来自 %q）："), owner.CommandPath()), flags)
-		writeFlagGroup(b, fmt.Sprintf(localized("Execution Flags (inherited from %q):", "执行选项（继承自 %q）："), owner.CommandPath()), execution)
+		writeFlagGroup(b, fmt.Sprintf(i18n.Text("Inherited Flags (from %q):", "继承选项（来自 %q）："), owner.CommandPath()), flags)
+		writeFlagGroup(b, fmt.Sprintf(i18n.Text("Execution Flags (inherited from %q):", "执行选项（继承自 %q）："), owner.CommandPath()), execution)
 	}
-	writeFlagGroup(b, localized("Planned Flags:", "计划中的选项："), planned)
-	writeFlagGroup(b, localized("Global Flags:", "全局选项："), append(global, syntheticHelpFlag()))
+	writeFlagGroup(b, i18n.Text("Planned Flags:", "计划中的选项："), planned)
+	writeFlagGroup(b, i18n.Text("Global Flags:", "全局选项："), append(global, syntheticHelpFlag()))
 }
 
 func isGlobalFlag(cmd, root *cobra.Command, f *pflag.Flag) bool {
@@ -202,7 +216,7 @@ func flagOwner(cmd *cobra.Command, f *pflag.Flag) *cobra.Command {
 }
 
 func flagPlanned(f *pflag.Flag) bool {
-	for _, value := range f.Annotations[plannedAnnotation] {
+	for _, value := range f.Annotations[PlannedAnnotation] {
 		if value == "true" {
 			return true
 		}
@@ -211,19 +225,15 @@ func flagPlanned(f *pflag.Flag) bool {
 }
 
 func flagSection(f *pflag.Flag) string {
-	for _, value := range f.Annotations[sectionAnnotation] {
+	for _, value := range f.Annotations[SectionAnnotation] {
 		return value
 	}
 	return ""
 }
 
-func commandPlanned(cmd *cobra.Command) bool {
-	return cmd.Annotations[plannedAnnotation] == "true"
-}
-
 func syntheticHelpFlag() *pflag.Flag {
 	flags := pflag.NewFlagSet("help", pflag.ContinueOnError)
-	flags.BoolP("help", "h", false, localized("show help", "显示帮助"))
+	flags.BoolP("help", "h", false, i18n.Text("show help", "显示帮助"))
 	return flags.Lookup("help")
 }
 
@@ -233,7 +243,7 @@ var defaultSuffixPattern = regexp.MustCompile(` \(default (.*)\)$`)
 // localizeFlagUsages translates pflag's generated default annotations so
 // Chinese help does not mix in English "(default ...)" suffixes.
 func localizeFlagUsages(usages string) string {
-	if activeLanguage() != langZH {
+	if i18n.Active() != i18n.ZH {
 		return usages
 	}
 	lines := strings.Split(usages, "\n")
@@ -259,7 +269,7 @@ func writeExamples(b *strings.Builder, cmd *cobra.Command) {
 	if strings.TrimSpace(cmd.Example) == "" {
 		return
 	}
-	writeHeading(b, localized("Examples:", "示例："))
+	writeHeading(b, i18n.Text("Examples:", "示例："))
 	for _, line := range strings.Split(cmd.Example, "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			fmt.Fprintf(b, "  %s\n", line)
@@ -276,7 +286,7 @@ func writeFooter(b *strings.Builder, cmd *cobra.Command) {
 		target = cmd.CommandPath() + " <command> --help"
 	}
 	b.WriteString("\n")
-	fmt.Fprintf(b, localized("Use %q for more information about a command.\n", "使用 %q 查看某个命令的更多信息。\n"), target)
+	fmt.Fprintf(b, i18n.Text("Use %q for more information about a command.\n", "使用 %q 查看某个命令的更多信息。\n"), target)
 }
 
 func writeHeading(b *strings.Builder, title string) {
