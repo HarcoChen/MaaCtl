@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"maactl/internal/clientconfig"
 	"strings"
 	"testing"
 
@@ -149,7 +150,7 @@ func TestCreateControllerRejectsUnsupportedType(t *testing.T) {
 		{Name: "play", Type: "PlayCover"},
 		{Name: "empty"},
 	} {
-		_, err := createController(spec, runOptions{})
+		_, err := createController(spec, runOptions{}, &clientconfig.Config{})
 		if err == nil {
 			t.Errorf("controller %q: expected an error", spec.Type)
 			continue

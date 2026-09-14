@@ -20,8 +20,8 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// interfaceOutput runs the CLI in-process and returns its combined output.
-func interfaceOutput(args ...string) (string, error) {
+// runCLI runs the CLI in-process and returns its combined output.
+func runCLI(args ...string) (string, error) {
 	var out bytes.Buffer
 	cmd := cli.NewRootCommand(testVersion)
 	cmd.SetOut(&out)
@@ -33,7 +33,7 @@ func interfaceOutput(args ...string) (string, error) {
 
 func mustHelp(t *testing.T, args ...string) string {
 	t.Helper()
-	out, err := interfaceOutput(args...)
+	out, err := runCLI(args...)
 	if err != nil {
 		t.Fatalf("help %v: %v\n%s", args, err, out)
 	}
@@ -43,11 +43,11 @@ func mustHelp(t *testing.T, args ...string) string {
 func TestRootHelpIsCompactOverview(t *testing.T) {
 	out := mustHelp(t, "-h")
 	for _, want := range []string{
-		"Inspect ADB devices",
-		"Inspect Win32 desktop windows",
 		"Inspect and validate a ProjectInterface",
-		"Load and inspect PI resources",
-		"Run PI tasks or Pipeline nodes",
+		"Inspect devices and windows",
+		"Load and inspect MaaFramework resources",
+		"Run PI tasks, presets, or Pipeline nodes",
+		"Inspect the client configuration",
 		"Global Flags:",
 		"Examples:",
 		`Use "maactl <command> --help" for more information about a command.`,
@@ -76,7 +76,7 @@ func TestVersionFlag(t *testing.T) {
 	}
 }
 
-// -v is the shorthand of --version.
+// -v is the shorthand of --version at the root.
 func TestVersionShorthand(t *testing.T) {
 	short := mustHelp(t, "-v")
 	long := mustHelp(t, "--version")
@@ -88,14 +88,24 @@ func TestVersionShorthand(t *testing.T) {
 	}
 }
 
+// The version command mirrors the flag.
+func TestVersionCommand(t *testing.T) {
+	out := mustHelp(t, "version")
+	if !strings.Contains(out, "maactl version "+testVersion) {
+		t.Fatalf("unexpected version output: %q", out)
+	}
+}
+
 func TestHelpCommandMatchesDashH(t *testing.T) {
 	for _, parts := range [][]string{
 		{"run"},
 		{"run", "task"},
 		{"resource"},
 		{"resource", "nodes"},
-		{"interface"},
-		{"adb", "devices"},
+		{"pi"},
+		{"pi", "tasks"},
+		{"device", "adb"},
+		{"config", "show"},
 	} {
 		flagArgs := append(append([]string{}, parts...), "-h")
 		commandArgs := append([]string{"help"}, parts...)
@@ -123,32 +133,18 @@ func TestRunHelpListsSharedFlagsOnce(t *testing.T) {
 	}
 }
 
-func TestPlannedFeaturesAreGrouped(t *testing.T) {
-	runHelp := mustHelp(t, "run", "-h")
-	idx := strings.Index(runHelp, "Planned Flags:")
-	if idx < 0 {
-		t.Fatalf("run help is missing the planned flags section:\n%s", runHelp)
-	}
-	planned := runHelp[idx:]
-	for _, flag := range []string{"--dry-run", "--explain", "-p, --option", "--option-file", "--overlay"} {
-		if !strings.Contains(planned, flag) {
-			t.Errorf("planned flag %s missing from the planned section", flag)
+// Every former "planned" feature is implemented now, so no help page may still
+// advertise one.
+func TestNoPlannedFeaturesRemain(t *testing.T) {
+	for _, args := range [][]string{
+		{"-h"}, {"run", "-h"}, {"pi", "-h"}, {"resource", "-h"}, {"config", "-h"}, {"device", "-h"},
+	} {
+		out := mustHelp(t, args...)
+		for _, unwanted := range []string{"(planned)", "Planned Flags:", "（计划中）", "计划中的选项："} {
+			if strings.Contains(out, unwanted) {
+				t.Errorf("%v help still advertises %q\n%s", args, unwanted, out)
+			}
 		}
-	}
-	if strings.Contains(runHelp[:idx], "--dry-run") {
-		t.Errorf("planned flag --dry-run should not appear outside the planned section")
-	}
-	if !strings.Contains(runHelp, "preset <name>") || !strings.Contains(runHelp, "Run the enabled tasks in a PI preset (planned)") {
-		t.Errorf("planned command preset is not marked in run help")
-	}
-
-	interfaceHelp := mustHelp(t, "interface", "-h")
-	idx = strings.Index(interfaceHelp, "Planned Flags:")
-	if idx < 0 || !strings.Contains(interfaceHelp[idx:], "--options") || !strings.Contains(interfaceHelp[idx:], "--presets") {
-		t.Fatalf("planned interface actions are not grouped:\n%s", interfaceHelp)
-	}
-	if !strings.Contains(interfaceHelp, "Actions:") {
-		t.Errorf("interface help is missing the actions section:\n%s", interfaceHelp)
 	}
 }
 
@@ -171,6 +167,23 @@ func TestRunHelpDocumentsWin32Flags(t *testing.T) {
 	}
 }
 
+// The short flags must not be reused for a second meaning anywhere.
+func TestShortFlagsAreUnambiguous(t *testing.T) {
+	// The concrete guarantee: -v is --version, -p is --preset, -o is --override,
+	// and -t/-n are the run shortcuts.
+	out := mustHelp(t, "run", "-h")
+	for _, want := range []string{"-p, --preset", "-o, --override", "-n, --node", "-t, --task", "-c, --controller", "-r, --resource"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("run help is missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{"-p, --option", "-O, --override-file", "-v, --validate"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("run help should not contain %q\n%s", unwanted, out)
+		}
+	}
+}
+
 func TestResourceHelpAttributesResourceFlag(t *testing.T) {
 	parent := mustHelp(t, "resource", "-h")
 	if !strings.Contains(parent, "-r, --resource string") {
@@ -186,17 +199,6 @@ func TestResourceHelpAttributesResourceFlag(t *testing.T) {
 	}
 }
 
-func TestDevicesHelpUsesGlobalJSON(t *testing.T) {
-	out := mustHelp(t, "adb", "devices", "-h")
-	if n := strings.Count(out, "-j, --json"); n != 1 {
-		t.Fatalf("json flag listed %d times:\n%s", n, out)
-	}
-	global := out[strings.Index(out, "Global Flags:"):]
-	if !strings.Contains(global, "-j, --json") {
-		t.Errorf("adb devices should use the global json flag:\n%s", out)
-	}
-}
-
 func TestHelpLanguageOverride(t *testing.T) {
 	t.Setenv("MAACTL_LANG", "zh_CN")
 	out := mustHelp(t, "-h")
@@ -205,8 +207,9 @@ func TestHelpLanguageOverride(t *testing.T) {
 		"命令：",
 		"全局选项：",
 		"示例：",
-		"查看 ADB 设备",
-		"运行 PI task 或 Pipeline 节点",
+		"查看设备与窗口",
+		"运行 PI task、preset 或 Pipeline 节点",
+		"检查和验证 ProjectInterface",
 		`使用 "maactl <command> --help" 查看某个命令的更多信息。`,
 	} {
 		if !strings.Contains(out, want) {
@@ -223,14 +226,14 @@ func TestHelpLanguageOverride(t *testing.T) {
 func TestChineseHelpSections(t *testing.T) {
 	t.Setenv("MAACTL_LANG", "zh-Hans")
 	runHelp := mustHelp(t, "run", "-h")
-	for _, want := range []string{"执行选项（与子命令共用）：", "计划中的选项：", "（计划中）", "事件输出", `（默认 "focus"）`} {
+	for _, want := range []string{"执行选项（与子命令共用）：", "事件输出", `（默认 "focus"）`, "配置项取值"} {
 		if !strings.Contains(runHelp, want) {
 			t.Errorf("Chinese run help is missing %q\n%s", want, runHelp)
 		}
 	}
-	iface := mustHelp(t, "interface", "-h")
-	if !strings.Contains(iface, "操作：") || !strings.Contains(iface, "计划中的选项：") || !strings.Contains(iface, "列出任务") {
-		t.Errorf("Chinese interface help is incomplete\n%s", iface)
+	piHelp := mustHelp(t, "pi", "-h")
+	if !strings.Contains(piHelp, "检查和验证 ProjectInterface") || !strings.Contains(piHelp, "列出任务") {
+		t.Errorf("Chinese pi help is incomplete\n%s", piHelp)
 	}
 	nodes := mustHelp(t, "resource", "nodes", "-h")
 	if !strings.Contains(nodes, `继承选项（来自 "maactl resource"）：`) {
@@ -252,7 +255,7 @@ func TestEnglishHelpStaysEnglish(t *testing.T) {
 	if !strings.Contains(out, "Execution Flags (shared with subcommands):") {
 		t.Errorf("English run help missing section\n%s", out)
 	}
-	if strings.Contains(out, "计划中的选项") || strings.Contains(out, "用法：") {
+	if strings.Contains(out, "配置项") || strings.Contains(out, "用法：") {
 		t.Errorf("English help leaked Chinese section titles\n%s", out)
 	}
 }
@@ -274,11 +277,6 @@ func TestRunFlagsParseAroundSubcommands(t *testing.T) {
 		}
 		if got, err := target.Flags().GetString("resource"); err != nil || got != "base" {
 			t.Errorf("%v: resource = %q, err = %v", args, got, err)
-		}
-		if target.Name() == "task" {
-			if target.LocalFlags().Lookup("task") != nil || target.LocalFlags().Lookup("node") != nil {
-				t.Errorf("%v: run shortcut flags leaked into %s", args, target.Name())
-			}
 		}
 	}
 }

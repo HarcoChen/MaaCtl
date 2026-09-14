@@ -14,9 +14,14 @@ import (
 )
 
 // Init loads MaaFramework from libDir and silences its stdout logging so the
-// CLI output stays clean. Callers must call maa.Release when done.
-func Init(libDir string) error {
-	return maa.Init(maa.WithLibDir(libDir), maa.WithStdoutLevel(maa.LoggingLevelOff))
+// CLI output stays clean. logDir, when not empty, receives MaaFramework's own
+// log files. Callers must call maa.Release when done.
+func Init(libDir, logDir string) error {
+	options := []maa.InitOption{maa.WithLibDir(libDir), maa.WithStdoutLevel(maa.LoggingLevelOff)}
+	if logDir != "" {
+		options = append(options, maa.WithLogDir(logDir))
+	}
+	return maa.Init(options...)
 }
 
 // BundledVersion returns the MaaFramework version carried by this build, or ""

@@ -2,6 +2,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -13,16 +14,25 @@ import (
 var version = "0.1.0"
 
 func main() {
-	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(1)
-	}
+	os.Exit(run(os.Args[1:]))
 }
 
-func run(args []string) error {
+// run executes the command tree and maps failures onto the documented exit
+// codes: a cli.ExitError carries its own code, anything else is an internal
+// error.
+func run(args []string) int {
 	root := cli.NewRootCommand(version)
 	root.SetArgs(args)
 	root.SetOut(os.Stdout)
 	root.SetErr(os.Stderr)
-	return root.Execute()
+	err := root.Execute()
+	if err == nil {
+		return cli.ExitOK
+	}
+	fmt.Fprintln(os.Stderr, "Error:", err)
+	var exit *cli.ExitError
+	if errors.As(err, &exit) {
+		return exit.Code
+	}
+	return cli.ExitInternal
 }

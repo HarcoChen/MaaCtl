@@ -29,7 +29,10 @@ func ParseMode(value string) (string, error) {
 type Sink struct {
 	JSON bool
 	Mode string
-	mu   sync.Mutex
+	// Display selects which focus display channels are printed. nil means the
+	// CLI default: only "log".
+	Display map[string]bool
+	mu      sync.Mutex
 }
 
 // Output renders one sink event. In focus mode only Pipeline focus texts are
@@ -41,7 +44,7 @@ func (s *Sink) Output(kind string, status maa.EventStatus, detail any) {
 	var values map[string]any
 	_ = json.Unmarshal(b, &values)
 	message := kind + "." + EventName(status)
-	focus := RenderFocus(message, values)
+	focus := RenderFocus(message, values, s.Display)
 	if s.Mode == ModeOff || (s.Mode == ModeFocus && focus == "") {
 		return
 	}

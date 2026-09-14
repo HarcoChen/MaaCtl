@@ -198,6 +198,32 @@ func (l *Loaded) Resolve(req Request) (*Resolution, error) {
 	}, nil
 }
 
+// ResolveOption evaluates a single option with the same layers and
+// applicability rules as Resolve, without requiring it to be referenced by a
+// layer. It is what pretask arguments use. It returns nil when the option does
+// not apply to the selected controller/resource.
+func (l *Loaded) ResolveOption(name string, req Request) (any, error) {
+	r := &resolver{
+		project:   l,
+		req:       req,
+		override:  Pipeline{},
+		lookupEnv: req.LookupEnv,
+	}
+	if r.lookupEnv == nil {
+		r.lookupEnv = os.LookupEnv
+	}
+	r.layers = r.valueLayers()
+	if err := r.resolveOption(name, "standalone", nil, "", 0); err != nil {
+		return nil, err
+	}
+	for _, selection := range r.selections {
+		if selection.Name == name {
+			return selection.Value(), nil
+		}
+	}
+	return nil, nil
+}
+
 // resolver carries the mutable state of one Resolve call.
 type resolver struct {
 	project       *Loaded

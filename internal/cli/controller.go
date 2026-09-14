@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"maactl/internal/clientconfig"
 	"maactl/internal/output"
 	"maactl/internal/pi"
 
@@ -14,10 +15,7 @@ import (
 	"github.com/MaaXYZ/maa-framework-go/v4/controller/win32"
 )
 
-// Controller types this build can create. MaaFramework also defines MacOS,
-// PlayCover, and Linux controllers, but they only run on their own platforms and
-// maactl ships for Windows, so those fail fast with an explicit message instead
-// of an opaque native error.
+// Controller types this build can create.
 const (
 	controllerTypeAdb     = "Adb"
 	controllerTypeWin32   = "Win32"
@@ -36,72 +34,129 @@ const win32ScreencapAll = win32.ScreencapAll
 const win32DefaultInput = win32.InputSeize
 
 // createController builds the MaaFramework controller described by a PI
-// controller entry, using the run options for anything the PI leaves open.
-func createController(spec *pi.Controller, opt runOptions) (*maa.Controller, error) {
+// controller entry, using the run options and client configuration for anything
+// the PI leaves open.
+func createController(spec *pi.Controller, opt runOptions, config *clientconfig.Config) (*maa.Controller, error) {
 	switch {
 	case strings.EqualFold(spec.Type, controllerTypeAdb):
-		return createAdbController(spec, opt)
+		return createAdbController(spec, opt, config)
 	case strings.EqualFold(spec.Type, controllerTypeWin32):
-		return createWin32Controller(spec, opt)
+		return createWin32Controller(spec, opt, config)
 	case strings.EqualFold(spec.Type, controllerTypeGamepad):
-		return createGamepadController(spec, opt)
+		return createGamepadController(spec, opt, config)
 	default:
-		return nil, fmt.Errorf("controller %q has type %q; this build supports %s, %s and %s", spec.Name, spec.Type, controllerTypeAdb, controllerTypeWin32, controllerTypeGamepad)
+		return nil, fmt.Errorf("controller %q has type %q; this build supports %s", spec.Name, spec.Type, pi.Join(pi.RunnableControllerTypes()))
 	}
 }
 
-func createAdbController(spec *pi.Controller, opt runOptions) (*maa.Controller, error) {
-	// Every ADB connection detail comes from MaaToolkit, so the controller is
-	// built from information MaaFramework already discovered and validated. An
-	// empty ADB path in particular makes MaaAdbControllerCreate fail, which is
-	// why the address alone is never enough.
-	device, err := resolveAdbDevice(opt.adbAddress, opt.adbName)
+// createAdbController builds an ADB controller.
+//
+// Connection details come from MaaToolkit whenever possible: it discovers the
+// ADB path and the per-device screencap/input methods. The client configuration
+// and command line then override the address, the ADB path, and the methods.
+func createAdbController(spec *pi.Controller, opt runOptions, config *clientconfig.Config) (*maa.Controller, error) {
+	address := firstNonEmpty(opt.adbAddress, config.Adb.Address)
+	name := opt.adbName
+	adbPath := firstNonEmpty(opt.adbPath, config.Adb.AdbPath)
+
+	device, err := resolveAdbDevice(address, name)
 	if err != nil {
+		// MaaToolkit did not find a matching device. An explicit adb path plus
+		// address is still enough to build a controller, which is what users
+		// with an unusual setup (or an emulator MaaToolkit cannot enumerate)
+		// need.
+		if adbPath != "" && address != "" {
+			return createAdbControllerDirect(spec, config, adbPath, address)
+		}
 		return nil, err
 	}
+
+	if adbPath == "" {
+		adbPath = device.AdbPath
+	}
 	// MaaToolkit recommends per-device screencap and input methods; the PI
-	// controller overrides them when it declares its own.
+	// controller, the client config, and the command line override them.
 	sc := device.ScreencapMethod
 	if sc == adb.ScreencapNone {
 		sc = adb.ScreencapDefault
 	}
-	if spec.Adb.Screencap != "" {
-		sc, err = adb.ParseScreencapMethod(spec.Adb.Screencap)
+	for _, value := range []string{spec.Adb.Screencap, config.Adb.Screencap} {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		parsed, err := adb.ParseScreencapMethod(value)
 		if err != nil {
 			return nil, err
 		}
+		sc = parsed
 	}
-	in := device.InputMethod
-	if in == adb.InputNone {
-		in = adb.InputDefault
+	input := device.InputMethod
+	if input == adb.InputNone {
+		input = adb.InputDefault
 	}
-	if spec.Adb.Input != "" {
-		in, err = adb.ParseInputMethod(spec.Adb.Input)
+	for _, value := range []string{spec.Adb.Input, config.Adb.Input} {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		parsed, err := adb.ParseInputMethod(value)
 		if err != nil {
 			return nil, err
 		}
+		input = parsed
 	}
-	ctrl, err := maa.NewAdbController(device.AdbPath, device.Address, sc, in, device.Config, "")
+	ctrl, err := maa.NewAdbController(adbPath, device.Address, sc, input, device.Config, "")
 	if err != nil {
-		return nil, fmt.Errorf("create ADB controller for %s (adb %s): %w", device.Address, device.AdbPath, err)
+		return nil, fmt.Errorf("create ADB controller for %s (adb %s): %w", device.Address, adbPath, err)
 	}
 	return ctrl, nil
 }
 
-func createWin32Controller(spec *pi.Controller, opt runOptions) (*maa.Controller, error) {
-	window, err := resolveWin32Window(spec, opt)
+// createAdbControllerDirect builds an ADB controller without MaaToolkit device
+// information, using the configured ADB path and address directly.
+func createAdbControllerDirect(spec *pi.Controller, config *clientconfig.Config, adbPath, address string) (*maa.Controller, error) {
+	sc := adb.ScreencapDefault
+	for _, value := range []string{spec.Adb.Screencap, config.Adb.Screencap} {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		parsed, err := adb.ParseScreencapMethod(value)
+		if err != nil {
+			return nil, err
+		}
+		sc = parsed
+	}
+	input := adb.InputDefault
+	for _, value := range []string{spec.Adb.Input, config.Adb.Input} {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		parsed, err := adb.ParseInputMethod(value)
+		if err != nil {
+			return nil, err
+		}
+		input = parsed
+	}
+	ctrl, err := maa.NewAdbController(adbPath, address, sc, input, config.Adb.ConfigJSON(), "")
+	if err != nil {
+		return nil, fmt.Errorf("create ADB controller for %s (adb %s): %w", address, adbPath, err)
+	}
+	return ctrl, nil
+}
+
+func createWin32Controller(spec *pi.Controller, opt runOptions, config *clientconfig.Config) (*maa.Controller, error) {
+	window, err := resolveWin32Window(spec, opt, config)
 	if err != nil {
 		return nil, err
 	}
-	screencap, err := win32ScreencapMethod(opt.win32Screencap, spec.Win32.Screencap)
+	screencap, err := win32ScreencapMethod(firstNonEmpty(opt.win32Screencap, config.Win32.Screencap), spec.Win32.Screencap)
 	if err != nil {
 		return nil, err
 	}
-	mouse, err := win32InputMethod(opt.win32Mouse, spec.Win32.Mouse, "mouse")
+	mouse, err := win32InputMethod(firstNonEmpty(opt.win32Mouse, config.Win32.Mouse), spec.Win32.Mouse, "mouse")
 	if err != nil {
 		return nil, err
 	}
-	keyboard, err := win32InputMethod(opt.win32Keyboard, spec.Win32.Keyboard, "keyboard")
+	keyboard, err := win32InputMethod(firstNonEmpty(opt.win32Keyboard, config.Win32.Keyboard), spec.Win32.Keyboard, "keyboard")
 	if err != nil {
 		return nil, err
 	}
@@ -113,22 +168,17 @@ func createWin32Controller(spec *pi.Controller, opt runOptions) (*maa.Controller
 }
 
 // resolveWin32Window picks the desktop window a Win32 controller drives. The
-// command line always wins; when it names no window the PI controller regexes
-// apply, and with neither a single detected window is used automatically.
-func resolveWin32Window(spec *pi.Controller, opt runOptions) (*maa.DesktopWindow, error) {
-	return resolveWindow(windowSelector(opt, spec.Win32.ClassRegex, spec.Win32.WindowRegex))
-}
-
-// windowSelector merges the command-line window selection with a PI controller's
-// window regexes. Any command-line selector wins as a group, so a stale PI regex
-// never narrows an explicit choice.
-func windowSelector(opt runOptions, classRegex, windowRegex string) win32Selector {
+// command line always wins; then the client configuration; then the PI
+// controller regexes; and with none of them a single detected window is used.
+func resolveWin32Window(spec *pi.Controller, opt runOptions, config *clientconfig.Config) (*maa.DesktopWindow, error) {
 	selector := win32Selector{handle: opt.win32Handle, class: opt.win32Class, window: opt.win32Window}
 	if selector.empty() {
-		selector.class = classRegex
-		selector.window = windowRegex
+		selector = win32Selector{handle: config.Win32.Handle, class: config.Win32.ClassRegex, window: config.Win32.WindowRegex}
 	}
-	return selector
+	if selector.empty() {
+		selector = win32Selector{class: spec.Win32.ClassRegex, window: spec.Win32.WindowRegex}
+	}
+	return resolveWindow(selector)
 }
 
 // resolveWindow returns the single desktop window accepted by selector.
@@ -162,12 +212,18 @@ func resolveWindow(selector win32Selector) (*maa.DesktopWindow, error) {
 
 // createGamepadController creates a virtual gamepad. A window is optional: with
 // one the controller also captures it, without one it only drives the gamepad.
-func createGamepadController(spec *pi.Controller, opt runOptions) (*maa.Controller, error) {
+func createGamepadController(spec *pi.Controller, opt runOptions, config *clientconfig.Config) (*maa.Controller, error) {
 	gamepadType, err := parseGamepadType(firstNonEmpty(opt.gamepadType, spec.Gamepad.GamepadType))
 	if err != nil {
 		return nil, err
 	}
-	selector := windowSelector(opt, spec.Gamepad.ClassRegex, spec.Gamepad.WindowRegex)
+	selector := win32Selector{handle: opt.win32Handle, class: opt.win32Class, window: opt.win32Window}
+	if selector.empty() {
+		selector = win32Selector{handle: config.Win32.Handle, class: config.Win32.ClassRegex, window: config.Win32.WindowRegex}
+	}
+	if selector.empty() {
+		selector = win32Selector{class: spec.Gamepad.ClassRegex, window: spec.Gamepad.WindowRegex}
+	}
 	if selector.empty() {
 		ctrl, err := maa.NewGamepadController(nil, gamepadType, win32.ScreencapNone)
 		if err != nil {
@@ -179,7 +235,7 @@ func createGamepadController(spec *pi.Controller, opt runOptions) (*maa.Controll
 	if err != nil {
 		return nil, err
 	}
-	screencap, err := win32ScreencapMethod(opt.win32Screencap, spec.Gamepad.Screencap)
+	screencap, err := win32ScreencapMethod(firstNonEmpty(opt.win32Screencap, config.Win32.Screencap), spec.Gamepad.Screencap)
 	if err != nil {
 		return nil, err
 	}
