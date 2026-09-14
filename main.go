@@ -18,7 +18,6 @@ type cliOptions struct {
 	libDir, interfacePath string
 	json                  bool
 }
-type deviceOptions struct{ json bool }
 
 type adbDeviceOutput struct {
 	Name            string `json:"name"`
@@ -50,37 +49,68 @@ func run(args []string) error {
 }
 
 func newRootCommand() *cobra.Command {
+	// Keep the intentional command order instead of alphabetical sorting.
+	cobra.EnableCommandSorting = false
 	var global cliOptions
 	root := &cobra.Command{
-		Use: "maactl", Version: version, Short: "MaaFramework and ProjectInterface command-line client",
-		Long:          "MaaCtl loads ProjectInterface v2 projects, inspects MaaFramework resources, and runs Pipeline tasks.\n\nUse positional arguments only for commands and required task/node names. Every option starts with - or --.",
+		Use:     "maactl",
+		Version: version,
+		Short:   "MaaFramework and ProjectInterface command-line client",
+		Long: `MaaCtl loads ProjectInterface v2 projects, inspects MaaFramework resources,
+and runs Pipeline tasks.
+
+Use positional arguments only for commands and required task/node names.
+Every option starts with - or --.`,
+		Example: `  maactl interface --show -f D:\projects\demo
+  maactl run task "自动挂机卖蛋" -f D:\projects\demo --stop-after 10s
+  maactl adb devices --json`,
 		SilenceErrors: true, SilenceUsage: true, Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	root.PersistentFlags().StringVarP(&global.libDir, "lib-dir", "l", "", "MaaFramework DLL directory (default: ./maafw/bin)")
-	root.PersistentFlags().StringVarP(&global.interfacePath, "interface", "f", "", "ProjectInterface file or directory (default: ./interface.json)")
-	root.PersistentFlags().BoolVarP(&global.json, "json", "j", false, "output JSON")
+	root.PersistentFlags().StringVarP(&global.interfacePath, "interface", "f", "", "ProjectInterface file or project directory (default: ./interface.json)")
+	root.PersistentFlags().BoolVarP(&global.json, "json", "j", false, "output JSON; run emits sink events as JSON")
+	// Define --version without a shorthand so -v stays reserved for
+	// flag shorthands such as "interface --validate".
+	root.Flags().Bool("version", false, "print version information")
 	root.AddCommand(newADBCommand(&global), newWin32Command(&global), newInterfaceCommand(&global), newResourceCommand(&global), newRunCommand(&global))
 	setFullHelp(root)
 	return root
 }
 
 func newADBCommand(global *cliOptions) *cobra.Command {
-	cmd := &cobra.Command{Use: "adb", Short: "Inspect ADB devices", Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error { return c.Help() }}
+	cmd := &cobra.Command{
+		Use: "adb", Short: "Inspect ADB devices",
+		Long: "List ADB devices discovered by MaaToolkit.\n\nUse \"maactl adb devices\" to see addresses and recommended connection methods.",
+		Example: `  maactl adb devices
+  maactl adb devices --json`,
+		Args: cobra.NoArgs,
+		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
+	}
 	cmd.AddCommand(newDevicesCommand(global, "adb"))
 	return cmd
 }
 
 func newWin32Command(global *cliOptions) *cobra.Command {
-	cmd := &cobra.Command{Use: "win32", Short: "Inspect Win32 desktop windows", Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error { return c.Help() }}
+	cmd := &cobra.Command{
+		Use: "win32", Short: "Inspect Win32 desktop windows",
+		Long: "List Win32 desktop windows discovered by MaaToolkit.\n\nUse \"maactl win32 devices\" to see window classes and handles.",
+		Example: `  maactl win32 devices
+  maactl win32 devices --json`,
+		Args: cobra.NoArgs,
+		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
+	}
 	cmd.AddCommand(newDevicesCommand(global, "win32"))
 	return cmd
 }
 
 func newDevicesCommand(global *cliOptions, kind string) *cobra.Command {
-	var local deviceOptions
+	long := "Windows are discovered through MaaToolkit and include the window name, class, and handle."
+	if kind == "adb" {
+		long = "Devices are discovered through MaaToolkit and include the address, ADB path,\nand recommended screencap and input methods."
+	}
 	cmd := &cobra.Command{
-		Use: "devices", Short: fmt.Sprintf("List %s devices", kind), Args: cobra.NoArgs,
+		Use: "devices", Short: fmt.Sprintf("List %s devices", kind), Long: long, Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			libDir, err := resolveLibDir(global.libDir)
 			if err != nil {
@@ -91,12 +121,11 @@ func newDevicesCommand(global *cliOptions, kind string) *cobra.Command {
 			}
 			defer func() { _ = maa.Release() }()
 			if kind == "adb" {
-				return listADB(local.json)
+				return listADB(global.json)
 			}
-			return listWin32(local.json)
+			return listWin32(global.json)
 		},
 	}
-	cmd.Flags().BoolVarP(&local.json, "json", "j", false, "output JSON")
 	return cmd
 }
 

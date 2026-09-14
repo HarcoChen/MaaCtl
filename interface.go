@@ -16,12 +16,17 @@ func newInterfaceCommand(global *cliOptions) *cobra.Command {
 		{"controllers", "c", "list controllers (name, label, type)"},
 		{"resources", "r", "list resources (name, label, path)"},
 		{"tasks", "t", "list tasks (name, label, entry)"},
-		{"validate", "v", "validate ProjectInterface loading"},
-		{"options", "", "planned: list PI option definitions"},
-		{"presets", "", "planned: list PI presets"},
+		{"validate", "v", "validate that the ProjectInterface loads"},
+		{"options", "", "list PI option definitions"},
+		{"presets", "", "list PI presets"},
 	}
 	cmd := &cobra.Command{
-		Use: "interface", Short: "Inspect and validate a ProjectInterface", Args: cobra.NoArgs,
+		Use: "interface", Short: "Inspect and validate a ProjectInterface",
+		Long: `Exactly one action is required: --show, --controllers, --resources, --tasks,
+or --validate. --options and --presets are planned.`,
+		Example: `  maactl interface --tasks -f D:\MaaMio
+  maactl interface --validate -f D:\MaaMio --json`,
+		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			action := ""
 			for _, candidate := range actions {
@@ -43,6 +48,8 @@ func newInterfaceCommand(global *cliOptions) *cobra.Command {
 	for _, action := range actions {
 		cmd.Flags().BoolP(action.name, action.shorthand, false, action.description)
 	}
+	markFlagsSection(cmd.Flags(), sectionAction, "show", "controllers", "resources", "tasks", "validate", "options", "presets")
+	markFlagsPlanned(cmd.Flags(), "options", "presets")
 	return cmd
 }
 

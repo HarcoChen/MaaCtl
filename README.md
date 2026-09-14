@@ -174,7 +174,7 @@ PI 中的 `import` 会随主 `interface.json` 一同加载。资源路径相对�
 
 ## 帮助与 JSON
 
-`-h` 与 `--help` 等价。顶层帮助以紧凑列表展示所有命令、子命令及参数含义，全局参数只列一次；指定命令时，只展示该命令及其子命令的帮助。
+`-h` 与 `--help` 等价，`maactl help <command>` 输出相同内容。顶层帮助只列出命令与一句话说明、全局参数和示例，不再展开各命令的参数；带子命令的命令帮助列出自身参数与子命令说明；叶子命令列出全部可用参数，共享的执行参数只定义一次并标注来源（如 `Execution Flags (inherited from "maactl run")`）。`--version` 没有短参数。
 
 ```powershell
 ./maactl.exe -h
@@ -184,6 +184,7 @@ PI 中的 `import` 会随主 `interface.json` 一同加载。资源路径相对�
 ./maactl.exe run task -h
 ./maactl.exe run task --help
 ./maactl.exe resource --help
+./maactl.exe help run
 ./maactl.exe --version
 ```
 
@@ -191,7 +192,7 @@ PI 中的 `import` 会随主 `interface.json` 一同加载。资源路径相对�
 
 ## 已公布但尚未实现
 
-帮助中以 `(planned)` 标注的命令或参数属于已预留的 CLI 契约，当前会明确返回未实现错误：
+帮助中以 `(planned)` 标注的命令、以及归入 `Planned Flags` 段的参数，属于已预留的 CLI 契约，当前会明确返回未实现错误：
 
 - `interface --options`、`interface --presets`
 - `resource hash`

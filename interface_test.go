@@ -87,13 +87,28 @@ func TestInterfaceHelpUsesFlags(t *testing.T) {
 	if err != nil || short != long {
 		t.Fatalf("help aliases differ: %v", err)
 	}
+	viaCommand, err := interfaceOutput("help", "interface")
+	if err != nil || viaCommand != short {
+		t.Fatalf("help command differs: %v", err)
+	}
 	root, err := interfaceOutput("-h")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, action := range []string{"show", "controllers", "resources", "tasks", "validate", "options", "presets"} {
-		if !strings.Contains(short, "--"+action) || !strings.Contains(root, "--"+action) || strings.Contains(root, "maactl interface "+action) {
-			t.Errorf("action %s missing from help or still shown as a subcommand", action)
+	for action, flag := range map[string]string{
+		"show":        "-s, --show",
+		"controllers": "-c, --controllers",
+		"resources":   "-r, --resources",
+		"tasks":       "-t, --tasks",
+		"validate":    "-v, --validate",
+		"options":     "--options",
+		"presets":     "--presets",
+	} {
+		if !strings.Contains(short, flag) {
+			t.Errorf("action %s (%s) missing from interface help", action, flag)
+		}
+		if strings.Contains(root, flag) || strings.Contains(root, "maactl interface "+action) {
+			t.Errorf("action %s should not be expanded in root help", action)
 		}
 	}
 }

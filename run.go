@@ -14,6 +14,7 @@ import (
 	maa "github.com/MaaXYZ/maa-framework-go/v3"
 	"github.com/MaaXYZ/maa-framework-go/v3/controller/adb"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 type runOptions struct {
@@ -28,53 +29,75 @@ type runOptions struct {
 func newRunCommand(global *cliOptions) *cobra.Command {
 	var taskName, nodeName string
 	var opt runOptions
-	cmd := &cobra.Command{Use: "run", Short: "Run PI tasks or Pipeline nodes", Long: "Run supports task, node and (planned) preset execution. Shortcuts: -t <task-name>, -n <node-name>. Options for run and its subcommands are listed below.", Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error {
-		if taskName != "" && nodeName != "" {
-			return fmt.Errorf("choose only one run shortcut: -t/--task or -n/--node")
-		}
-		if taskName != "" {
-			return runTask(global, taskName, opt)
-		}
-		if nodeName != "" {
-			return runNode(global, nodeName, opt)
-		}
-		return c.Help()
-	}}
-	cmd.Flags().StringVarP(&taskName, "task", "t", "", "shortcut for: run task <task-name>")
-	cmd.Flags().StringVarP(&nodeName, "node", "n", "", "shortcut for: run node <node-name>")
-	addRunFlags(cmd, &opt)
-	cmd.AddCommand(newRunTaskCommand(global), newRunNodeCommand(global), plannedRunCommand("preset", "Run the enabled tasks in a PI preset"))
+	cmd := &cobra.Command{
+		Use:   "run",
+		Short: "Run PI tasks or Pipeline nodes",
+		Long: `Run a task declared in ProjectInterface, or run a Pipeline node directly.
+
+Give exactly one of --task/-t, --node/-n, or a subcommand:
+  maactl run -t <task-name>
+  maactl run -n <node-name>`,
+		Example: `  maactl run -t "自动挂机卖蛋" -f D:\MaaMio --stop-after 10s
+  maactl run node "签到-开始签到" --adb-address 127.0.0.1:16384 --events all`,
+		Args: cobra.NoArgs,
+		RunE: func(c *cobra.Command, _ []string) error {
+			if taskName != "" && nodeName != "" {
+				return fmt.Errorf("choose only one run shortcut: -t/--task or -n/--node")
+			}
+			if taskName != "" {
+				return runTask(global, taskName, opt)
+			}
+			if nodeName != "" {
+				return runNode(global, nodeName, opt)
+			}
+			return c.Help()
+		},
+	}
+	cmd.Flags().StringVarP(&taskName, "task", "t", "", `shortcut for "maactl run task <task-name>"`)
+	cmd.Flags().StringVarP(&nodeName, "node", "n", "", `shortcut for "maactl run node <node-name>"`)
+	// Shared execution flags live on run only and are inherited by its subcommands.
+	addRunFlags(cmd.PersistentFlags(), &opt)
+	cmd.AddCommand(newRunTaskCommand(global, &opt), newRunNodeCommand(global, &opt), plannedRunCommand("preset", "Run the enabled tasks in a PI preset"))
 	return cmd
 }
 
 func newResourceCommand(global *cliOptions) *cobra.Command {
 	var resourceName string
 	var inspect, nodes bool
-	cmd := &cobra.Command{Use: "resource", Short: "Load and inspect PI resources", Long: "Load and inspect PI resources. Shortcuts: -i inspect, -n nodes.", Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error {
-		if !inspect && !nodes {
-			return c.Help()
-		}
-		if inspect && nodes {
-			return fmt.Errorf("choose only one resource shortcut")
-		}
-		pi, err := loadPI(global.interfacePath)
-		if err != nil {
-			return err
-		}
-		var ctrl *controller
-		if len(pi.Controller) == 1 {
-			ctrl = &pi.Controller[0]
-		} else {
-			ctrl = &controller{}
-		}
-		res, err := pi.findResource(resourceName, ctrl)
-		if err != nil {
-			return err
-		}
-		return inspectResource(global, pi, res, nodes)
-	}}
-	add := func(use string, aliases []string, short string, nodes bool) {
-		cmd.AddCommand(&cobra.Command{Use: use, Aliases: aliases, Short: short, Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error {
+	cmd := &cobra.Command{
+		Use: "resource", Short: "Load and inspect PI resources",
+		Long: `resource inspect shows loaded metadata; resource nodes lists Pipeline nodes
+available in the loaded resource. The shortcut flags -i and -n are equivalent
+to the two subcommands.`,
+		Example: `  maactl resource inspect -f D:\MaaMio
+  maactl resource nodes -r base -f D:\MaaMio --json`,
+		Args: cobra.NoArgs,
+		RunE: func(c *cobra.Command, _ []string) error {
+			if !inspect && !nodes {
+				return c.Help()
+			}
+			if inspect && nodes {
+				return fmt.Errorf("choose only one resource shortcut")
+			}
+			pi, err := loadPI(global.interfacePath)
+			if err != nil {
+				return err
+			}
+			var ctrl *controller
+			if len(pi.Controller) == 1 {
+				ctrl = &pi.Controller[0]
+			} else {
+				ctrl = &controller{}
+			}
+			res, err := pi.findResource(resourceName, ctrl)
+			if err != nil {
+				return err
+			}
+			return inspectResource(global, pi, res, nodes)
+		},
+	}
+	add := func(use string, aliases []string, short, long string, nodes bool) {
+		cmd.AddCommand(&cobra.Command{Use: use, Aliases: aliases, Short: short, Long: long, Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error {
 			pi, err := loadPI(global.interfacePath)
 			if err != nil {
 				return err
@@ -92,21 +115,25 @@ func newResourceCommand(global *cliOptions) *cobra.Command {
 			return inspectResource(global, pi, res, nodes)
 		}})
 	}
-	add("inspect", nil, "Show loaded resource metadata", false)
-	add("nodes", nil, "List loaded Pipeline nodes", true)
+	add("inspect", nil, "Show loaded resource metadata", "Load the selected resource and show its paths, hash, and node count.", false)
+	add("nodes", nil, "List loaded Pipeline nodes", "Load the selected resource and list all Pipeline nodes it provides.", true)
 	cmd.AddCommand(plannedResourceCommand("hash", "Print or verify the loaded resource hash"))
 	cmd.PersistentFlags().StringVarP(&resourceName, "resource", "r", "", "PI resource name (default: first resource)")
-	cmd.Flags().BoolVarP(&inspect, "inspect", "i", false, "shortcut for: resource inspect")
-	cmd.Flags().BoolVarP(&nodes, "nodes", "n", false, "shortcut for: resource nodes")
+	cmd.Flags().BoolVarP(&inspect, "inspect", "i", false, `shortcut for "maactl resource inspect"`)
+	cmd.Flags().BoolVarP(&nodes, "nodes", "n", false, `shortcut for "maactl resource nodes"`)
 	return cmd
 }
 
 func plannedRunCommand(use, short string) *cobra.Command {
-	return &cobra.Command{Use: use + " <name>", Short: short + " (planned)", Long: short + ". This command is part of the published CLI contract but is not implemented yet.", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, _ []string) error { return fmt.Errorf("run %s is not implemented yet", use) }}
+	cmd := &cobra.Command{Use: use + " <name>", Short: short, Long: "This command is part of the published CLI contract but is not implemented yet. It returns an error when invoked.", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, _ []string) error { return fmt.Errorf("run %s is not implemented yet", use) }}
+	markCommandPlanned(cmd)
+	return cmd
 }
 
 func plannedResourceCommand(use, short string) *cobra.Command {
-	return &cobra.Command{Use: use, Short: short + " (planned)", Long: short + ". This command is part of the published CLI contract but is not implemented yet.", Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error { return fmt.Errorf("resource %s is not implemented yet", use) }}
+	cmd := &cobra.Command{Use: use, Short: short, Long: "This command is part of the published CLI contract but is not implemented yet. It returns an error when invoked.", Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error { return fmt.Errorf("resource %s is not implemented yet", use) }}
+	markCommandPlanned(cmd)
+	return cmd
 }
 
 func inspectResource(global *cliOptions, pi *loadedPI, spec *resource, listNodes bool) error {
@@ -154,38 +181,52 @@ func inspectResource(global *cliOptions, pi *loadedPI, spec *resource, listNodes
 	return nil
 }
 
-func addRunFlags(cmd *cobra.Command, opt *runOptions) {
-	cmd.Flags().StringVarP(&opt.resource, "resource", "r", "", "PI resource name (default: first compatible resource)")
-	cmd.Flags().StringVarP(&opt.controller, "controller", "c", "", "PI controller name (default: only controller)")
-	cmd.Flags().StringVarP(&opt.adbAddress, "adb-address", "a", "", "ADB device serial/address (default: only detected device)")
-	cmd.Flags().StringVarP(&opt.override, "override", "o", "", "final pipeline override JSON")
-	cmd.Flags().StringVarP(&opt.overrideFile, "override-file", "O", "", "file containing final pipeline override JSON")
-	cmd.Flags().StringArrayVarP(&opt.optionValues, "option", "p", nil, "planned: option value as name=<JSON>; repeatable")
-	cmd.Flags().StringArrayVar(&opt.overlay, "overlay", nil, "planned: additional resource root loaded after the selected resource; repeatable")
-	cmd.Flags().String("option-file", "", "planned: JSON file of option values")
-	cmd.Flags().Bool("dry-run", false, "planned: resolve and display execution without connecting a controller")
-	cmd.Flags().Bool("explain", false, "planned: display resource and Pipeline override layers")
-	cmd.Flags().StringVar(&opt.events, "events", "focus", "sink output: focus (default), all, or off")
-	cmd.Flags().DurationVar(&opt.stopAfter, "stop-after", 0, "stop a running task after this duration (for bounded runs/tests)")
-	cmd.Flags().BoolVar(&opt.noAgent, "no-agent", false, "do not start the ProjectInterface agent")
+func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
+	flags.StringVarP(&opt.resource, "resource", "r", "", "PI resource name (default: first compatible resource)")
+	flags.StringVarP(&opt.controller, "controller", "c", "", "PI controller name (default: only controller)")
+	flags.StringVarP(&opt.adbAddress, "adb-address", "a", "", "ADB device serial/address (default: only detected device)")
+	flags.StringVarP(&opt.override, "override", "o", "", "final Pipeline override JSON")
+	flags.StringVarP(&opt.overrideFile, "override-file", "O", "", "file containing the final Pipeline override JSON")
+	flags.StringArrayVarP(&opt.optionValues, "option", "p", nil, "option value as name=<JSON>; repeatable")
+	flags.StringArrayVar(&opt.overlay, "overlay", nil, "additional resource root loaded after the selected resource; repeatable")
+	flags.String("option-file", "", "JSON file of option values")
+	flags.Bool("dry-run", false, "resolve and display execution without connecting a controller")
+	flags.Bool("explain", false, "display resource and Pipeline override layers")
+	flags.StringVar(&opt.events, "events", "focus", "event output: focus (PI text), all (all sink events), or off")
+	flags.DurationVar(&opt.stopAfter, "stop-after", 0, "stop a running task after this duration; for bounded runs and tests")
+	flags.BoolVar(&opt.noAgent, "no-agent", false, "do not start the ProjectInterface agent")
+	flags.VisitAll(func(f *pflag.Flag) {
+		_ = flags.SetAnnotation(f.Name, sectionAnnotation, []string{sectionExecution})
+	})
+	markFlagsPlanned(flags, "option", "overlay", "option-file", "dry-run", "explain")
 }
 
-func newRunTaskCommand(global *cliOptions) *cobra.Command {
-	var opt runOptions
-	cmd := &cobra.Command{Use: "task <task-name>", Short: "Run a task declared in ProjectInterface", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
-		return runTask(global, args[0], opt)
-	}}
-	addRunFlags(cmd, &opt)
-	return cmd
+func newRunTaskCommand(global *cliOptions, opt *runOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "task <task-name>",
+		Short: "Run a task declared in ProjectInterface",
+		Long: `Looks up the task by name, resolves its entry node and Pipeline overrides,
+then executes it on the selected controller.`,
+		Example: `  maactl run task "自动挂机卖蛋" -f D:\MaaMio --stop-after 10s`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return runTask(global, args[0], *opt)
+		},
+	}
 }
 
-func newRunNodeCommand(global *cliOptions) *cobra.Command {
-	var opt runOptions
-	cmd := &cobra.Command{Use: "node <node-name>", Short: "Run a Pipeline node from a PI resource", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
-		return runNode(global, args[0], opt)
-	}}
-	addRunFlags(cmd, &opt)
-	return cmd
+func newRunNodeCommand(global *cliOptions, opt *runOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "node <node-name>",
+		Short: "Run a Pipeline node from a PI resource",
+		Long: `The node name is used directly as the task entry; the node is executed with
+the selected resource and Pipeline overrides.`,
+		Example: `  maactl run node "签到-开始签到" --adb-address 127.0.0.1:16384 --events all`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return runNode(global, args[0], *opt)
+		},
+	}
 }
 
 func runTask(global *cliOptions, name string, opt runOptions) error {
