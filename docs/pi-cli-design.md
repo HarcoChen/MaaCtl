@@ -180,10 +180,14 @@ maactl [global flags] <group> [subcommand] [arguments] [flags]
 
 ```text
 option.default_case / inputs[].default / hotkeys[].default
+  → 配置文件全局 option → 配置文件 task[].option
   → preset.task[].option
   → --option-file
   → --option
 ```
+
+**同一个 option 名只有一个取值**：若 `global_option` 与 `task.option` 都引用了同一个 option，用户在
+命令行/预设中选的值对两处都生效，层级只决定「在哪里、以什么优先级合并 override」，不会各取一套值。
 
 - `select` / `switch`：单个 `case.name`。`switch` 只接受协议承认的 Yes/No 名称集合
   （`Yes|yes|Y|y` 与 `No|no|N|n`），大小写归一。
