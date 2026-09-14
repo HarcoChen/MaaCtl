@@ -1,5 +1,9 @@
 # MaaCtl：MaaFramework / ProjectInterface CLI 设计
 
+> **已废弃。** 本文是第一版设计，其中很多内容已经过时（动作开关式的 `interface` 命令、
+> 短参数重载、以及当时尚未实现的 option/preset 契约）。现行设计见
+> [pi-cli-design.md](pi-cli-design.md)。本文只作为历史记录保留。
+
 ## 目标与范围
 
 `maactl` 在保留现有 `adb devices`、`win32 devices` 的基础上，提供一个可脚本化的 MaaFramework Client：
