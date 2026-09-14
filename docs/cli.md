@@ -49,6 +49,7 @@ maactl interface --show `
 | `--win32-class` | Win32 窗口类名正则（默认：PI `win32.class_regex`） |
 | `--win32-window` | Win32 窗口标题正则（默认：PI `win32.window_regex`） |
 | `--win32-screencap` / `--win32-mouse` / `--win32-keyboard` | 覆盖 Win32 截图 / 鼠标 / 键盘方式（默认：PI `win32` 配置） |
+| `--gamepad-type` | 虚拟手柄类型：`Xbox360`（默认）或 `DualShock4`（默认：PI `gamepad.gamepad_type`） |
 | `-c, --controller` | PI 控制器名称（默认：唯一的控制器） |
 | `-r, --resource` | PI 资源名称（默认：第一个兼容资源） |
 | `--events` | 事件输出：`focus`（默认）/ `all` / `off` |
@@ -191,8 +192,26 @@ maactl run -c PC -t 每日任务 -f D:\projects\desktop `
 maactl run -c PC -n Login --win32-handle 0x1A2B3C
 ```
 
-当前构建只提供 `Adb` 与 `Win32` 两种控制器的构造能力；PI 中出现 `MacOS`、`PlayCover`、`Gamepad`、
-`Linux` 等类型时会直接报错，而不是在连接阶段失败。
+当前构建提供 `Adb`、`Win32`、`Gamepad` 三种控制器的构造能力；PI 中出现 `MacOS`、`PlayCover`、`Linux`
+等类型时会直接报错，而不是在连接阶段失败。
+
+### Gamepad 控制器
+
+PI controller 的 `type` 为 `Gamepad` 时，`maactl` 创建虚拟手柄（Xbox 360 或 DualShock 4），需要系统安装
+[ViGEm Bus Driver](https://github.com/ViGEm/ViGEmBus/releases)。
+
+- 手柄类型：PI `gamepad.gamepad_type`（`Xbox360` / `DualShock4`，也接受 `DS4`），默认 `Xbox360`，可用
+  `--gamepad-type` 覆盖。
+- 截图窗口（可选）：使用与 Win32 相同的窗口选择选项（`--win32-handle/--win32-class/--win32-window` >
+  PI `gamepad.class_regex`/`gamepad.window_regex`）。**识别需要截图**，所以需要画面识别的任务也要配置窗口正则；
+  未配置窗口时控制器只驱动手柄，流水线无法识别画面。
+- 截图方式（可选）：PI `gamepad.screencap` 或 `--win32-screencap`，默认全部方式，仅在配置了窗口时有效。
+
+```powershell
+# 虚拟 Xbox 360 手柄，并截图 MuMu 窗口用于识别
+maactl run -c Pad -t 每日任务 -f D:\projects\game `
+  --win32-window MuMu --gamepad-type Xbox360 --win32-screencap PrintWindow
+```
 
 ## Agent 子进程
 

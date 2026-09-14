@@ -10,7 +10,7 @@ import (
 
 	"maactl/internal/maafw/bundled"
 
-	maa "github.com/MaaXYZ/maa-framework-go/v3"
+	maa "github.com/MaaXYZ/maa-framework-go/v4"
 )
 
 // Init loads MaaFramework from libDir and silences its stdout logging so the

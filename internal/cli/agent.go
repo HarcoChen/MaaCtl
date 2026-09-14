@@ -13,7 +13,7 @@ import (
 
 	"maactl/internal/pi"
 
-	maa "github.com/MaaXYZ/maa-framework-go/v3"
+	maa "github.com/MaaXYZ/maa-framework-go/v4"
 )
 
 const (
@@ -125,18 +125,18 @@ func agentLogFileName(index, total int) string {
 func (l agentLaunch) start(spec pi.Agent) (*agentProcess, error) {
 	label := strings.TrimSpace(strings.Join(append([]string{spec.ChildExec}, spec.ChildArgs...), " "))
 
-	client := maa.NewAgentClient(spec.Identifier)
-	if client == nil {
-		return nil, fmt.Errorf("agent %s: create AgentClient", label)
+	client, err := maa.NewAgentClient(maa.WithIdentifier(spec.Identifier))
+	if err != nil {
+		return nil, fmt.Errorf("agent %s: create AgentClient: %w", label, err)
 	}
-	identifier, ok := client.Identifier()
-	if !ok || identifier == "" {
+	identifier, err := client.Identifier()
+	if err != nil || identifier == "" {
 		client.Destroy()
 		return nil, fmt.Errorf("agent %s: read the AgentClient socket identifier", label)
 	}
-	if !client.BindResource(l.res) {
+	if err := client.BindResource(l.res); err != nil {
 		client.Destroy()
-		return nil, fmt.Errorf("agent %s: bind the AgentClient to resource %s", label, l.resName)
+		return nil, fmt.Errorf("agent %s: bind the AgentClient to resource %s: %w", label, l.resName, err)
 	}
 
 	logs, err := openAgentLogs(l.logMode, l.prefix, l.logName)
@@ -175,13 +175,13 @@ func (l agentLaunch) start(spec pi.Agent) (*agentProcess, error) {
 	// items, so it runs in its own goroutine and is watched for a child process
 	// that exits first, an agent that never connects, and an interrupt.
 	fmt.Printf("Connecting agent %s\n", label)
-	connected := make(chan bool, 1)
+	connected := make(chan error, 1)
 	go func() { connected <- client.Connect() }()
 	select {
-	case ok := <-connected:
-		if !ok {
+	case err := <-connected:
+		if err != nil {
 			agent.shutdown()
-			return nil, fmt.Errorf("agent %s: failed to connect (identifier %s); check the agent output for details", label, identifier)
+			return nil, fmt.Errorf("agent %s: failed to connect (identifier %s): %w", label, identifier, err)
 		}
 	case <-agent.exited:
 		exitErr := agent.exitErr
@@ -215,10 +215,10 @@ func agentExecPath(dir, childExec string) string {
 // connection also shows what the agent provides.
 func (a *agentProcess) registrations() string {
 	var parts []string
-	if actions, ok := a.client.GetCustomActionList(); ok && len(actions) > 0 {
+	if actions, err := a.client.GetCustomActionList(); err == nil && len(actions) > 0 {
 		parts = append(parts, "custom actions: "+strings.Join(actions, ", "))
 	}
-	if recognitions, ok := a.client.GetCustomRecognitionList(); ok && len(recognitions) > 0 {
+	if recognitions, err := a.client.GetCustomRecognitionList(); err == nil && len(recognitions) > 0 {
 		parts = append(parts, "custom recognitions: "+strings.Join(recognitions, ", "))
 	}
 	if len(parts) == 0 {
@@ -239,7 +239,7 @@ func stopAgents(agents []*agentProcess) {
 func (a *agentProcess) shutdown() {
 	if a.client != nil {
 		if a.client.Connected() {
-			a.client.Disconnect()
+			_ = a.client.Disconnect()
 		}
 		a.client.Destroy()
 		a.client = nil

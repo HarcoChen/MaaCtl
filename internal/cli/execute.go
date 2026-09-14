@@ -12,7 +12,7 @@ import (
 	"maactl/internal/maafw"
 	"maactl/internal/pi"
 
-	maa "github.com/MaaXYZ/maa-framework-go/v3"
+	maa "github.com/MaaXYZ/maa-framework-go/v4"
 )
 
 func execute(global *Options, project *pi.Loaded, piCtrl *pi.Controller, piRes *pi.Resource, entry string, override any, opt runOptions) error {
@@ -32,9 +32,9 @@ func execute(global *Options, project *pi.Loaded, piCtrl *pi.Controller, piRes *
 	signal.Notify(stopSignal, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(stopSignal)
 
-	res := maa.NewResource()
-	if res == nil {
-		return fmt.Errorf("create Maa resource")
+	res, err := maa.NewResource()
+	if err != nil {
+		return fmt.Errorf("create Maa resource: %w", err)
 	}
 	defer res.Destroy()
 	for _, p := range piRes.Path {
@@ -60,18 +60,26 @@ func execute(global *Options, project *pi.Loaded, piCtrl *pi.Controller, piRes *
 	if !ctrl.PostConnect().Wait().Success() {
 		return fmt.Errorf("connect controller %q", piCtrl.Name)
 	}
-	tasker := maa.NewTasker()
-	if tasker == nil {
-		return fmt.Errorf("create Maa tasker")
+	tasker, err := maa.NewTasker()
+	if err != nil {
+		return fmt.Errorf("create Maa tasker: %w", err)
 	}
 	defer tasker.Destroy()
-	if !tasker.BindResource(res) || !tasker.BindController(ctrl) || !tasker.Initialized() {
+	if err := tasker.BindResource(res); err != nil {
+		return fmt.Errorf("bind Maa resource: %w", err)
+	}
+	if err := tasker.BindController(ctrl); err != nil {
+		return fmt.Errorf("bind Maa controller: %w", err)
+	}
+	if !tasker.Initialized() {
 		return fmt.Errorf("initialize Maa tasker")
 	}
 	sink := &event.Sink{JSON: global.JSON, Mode: mode}
 	tasker.AddSink(&event.TaskerSink{Sink: sink})
-	// MaaFramework v5.13 emits Pipeline node notifications on the context sink.
-	// The ordinary tasker sink only receives Resource/Controller/Tasker events.
+	res.AddSink(&event.ResourceSink{Sink: sink})
+	ctrl.AddSink(&event.ControllerSink{Sink: sink})
+	// Pipeline node notifications arrive on the context sink; the tasker and
+	// resource/controller sinks carry their own event categories.
 	tasker.AddContextSink(&event.ContextSink{Sink: sink})
 
 	fmt.Printf("Running %s (resource=%s controller=%s)\n", entry, piRes.Name, piCtrl.Name)

@@ -157,6 +157,7 @@ func TestRunHelpDocumentsWin32Flags(t *testing.T) {
 	for _, flag := range []string{
 		"--win32-handle", "--win32-class", "--win32-window",
 		"--win32-screencap", "--win32-mouse", "--win32-keyboard",
+		"--gamepad-type",
 	} {
 		if n := strings.Count(runHelp, flag); n != 1 {
 			t.Errorf("win32 flag %s listed %d times in run help\n%s", flag, n, runHelp)

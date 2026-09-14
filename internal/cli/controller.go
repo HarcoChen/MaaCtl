@@ -9,27 +9,26 @@ import (
 	"maactl/internal/output"
 	"maactl/internal/pi"
 
-	maa "github.com/MaaXYZ/maa-framework-go/v3"
-	"github.com/MaaXYZ/maa-framework-go/v3/controller/adb"
-	"github.com/MaaXYZ/maa-framework-go/v3/controller/win32"
+	maa "github.com/MaaXYZ/maa-framework-go/v4"
+	"github.com/MaaXYZ/maa-framework-go/v4/controller/adb"
+	"github.com/MaaXYZ/maa-framework-go/v4/controller/win32"
 )
 
 // Controller types this build can create. MaaFramework also defines MacOS,
-// PlayCover, Gamepad, and Linux controllers, but the Go binding in use does not
-// expose their constructors, so they fail fast with an explicit message instead
+// PlayCover, and Linux controllers, but they only run on their own platforms and
+// maactl ships for Windows, so those fail fast with an explicit message instead
 // of an opaque native error.
 const (
-	controllerTypeAdb   = "Adb"
-	controllerTypeWin32 = "Win32"
+	controllerTypeAdb     = "Adb"
+	controllerTypeWin32   = "Win32"
+	controllerTypeGamepad = "Gamepad"
 )
 
 // win32ScreencapAll enables every Win32 screencap method. MaaFramework tests
 // all provided methods and uses the fastest available one, so enabling them all
 // is the most forgiving default when the PI controller names none. Input
 // methods, in contrast, cannot be combined: one has to be picked.
-const win32ScreencapAll = win32.ScreencapGDI | win32.ScreencapFramePool |
-	win32.ScreencapDXGIDesktopDup | win32.ScreencapDXGIDesktopDupWindow |
-	win32.ScreencapPrintWindow | win32.ScreencapScreenDC
+const win32ScreencapAll = win32.ScreencapAll
 
 // win32DefaultInput is the mouse and keyboard method used when neither the PI
 // controller nor the command line selects one. Seize is the most compatible
@@ -44,8 +43,10 @@ func createController(spec *pi.Controller, opt runOptions) (*maa.Controller, err
 		return createAdbController(spec, opt)
 	case strings.EqualFold(spec.Type, controllerTypeWin32):
 		return createWin32Controller(spec, opt)
+	case strings.EqualFold(spec.Type, controllerTypeGamepad):
+		return createGamepadController(spec, opt)
 	default:
-		return nil, fmt.Errorf("controller %q has type %q; this build supports %s and %s", spec.Name, spec.Type, controllerTypeAdb, controllerTypeWin32)
+		return nil, fmt.Errorf("controller %q has type %q; this build supports %s, %s and %s", spec.Name, spec.Type, controllerTypeAdb, controllerTypeWin32, controllerTypeGamepad)
 	}
 }
 
@@ -80,9 +81,9 @@ func createAdbController(spec *pi.Controller, opt runOptions) (*maa.Controller, 
 			return nil, err
 		}
 	}
-	ctrl := maa.NewAdbController(device.AdbPath, device.Address, sc, in, device.Config, "")
-	if ctrl == nil {
-		return nil, fmt.Errorf("create ADB controller for %s (adb %s)", device.Address, device.AdbPath)
+	ctrl, err := maa.NewAdbController(device.AdbPath, device.Address, sc, in, device.Config, "")
+	if err != nil {
+		return nil, fmt.Errorf("create ADB controller for %s (adb %s): %w", device.Address, device.AdbPath, err)
 	}
 	return ctrl, nil
 }
@@ -104,9 +105,9 @@ func createWin32Controller(spec *pi.Controller, opt runOptions) (*maa.Controller
 	if err != nil {
 		return nil, err
 	}
-	ctrl := maa.NewWin32Controller(window.Handle, screencap, mouse, keyboard)
-	if ctrl == nil {
-		return nil, fmt.Errorf("create Win32 controller for %s", describeWin32Window(window))
+	ctrl, err := maa.NewWin32Controller(window.Handle, screencap, mouse, keyboard)
+	if err != nil {
+		return nil, fmt.Errorf("create Win32 controller for %s: %w", describeWin32Window(window), err)
 	}
 	return ctrl, nil
 }
@@ -115,12 +116,27 @@ func createWin32Controller(spec *pi.Controller, opt runOptions) (*maa.Controller
 // command line always wins; when it names no window the PI controller regexes
 // apply, and with neither a single detected window is used automatically.
 func resolveWin32Window(spec *pi.Controller, opt runOptions) (*maa.DesktopWindow, error) {
+	return resolveWindow(windowSelector(opt, spec.Win32.ClassRegex, spec.Win32.WindowRegex))
+}
+
+// windowSelector merges the command-line window selection with a PI controller's
+// window regexes. Any command-line selector wins as a group, so a stale PI regex
+// never narrows an explicit choice.
+func windowSelector(opt runOptions, classRegex, windowRegex string) win32Selector {
 	selector := win32Selector{handle: opt.win32Handle, class: opt.win32Class, window: opt.win32Window}
 	if selector.empty() {
-		selector.class = spec.Win32.ClassRegex
-		selector.window = spec.Win32.WindowRegex
+		selector.class = classRegex
+		selector.window = windowRegex
 	}
-	windows := desktopWindows()
+	return selector
+}
+
+// resolveWindow returns the single desktop window accepted by selector.
+func resolveWindow(selector win32Selector) (*maa.DesktopWindow, error) {
+	windows, err := desktopWindows()
+	if err != nil {
+		return nil, fmt.Errorf("list desktop windows: %w", err)
+	}
 	if len(windows) == 0 {
 		return nil, fmt.Errorf("no desktop windows found; run \"maactl win32 devices\" to list them")
 	}
@@ -142,6 +158,56 @@ func resolveWin32Window(spec *pi.Controller, opt runOptions) (*maa.DesktopWindow
 	default:
 		return nil, fmt.Errorf("%d desktop windows match %s: %s", len(matched), selector.describe(), describeWin32Windows(matched))
 	}
+}
+
+// createGamepadController creates a virtual gamepad. A window is optional: with
+// one the controller also captures it, without one it only drives the gamepad.
+func createGamepadController(spec *pi.Controller, opt runOptions) (*maa.Controller, error) {
+	gamepadType, err := parseGamepadType(firstNonEmpty(opt.gamepadType, spec.Gamepad.GamepadType))
+	if err != nil {
+		return nil, err
+	}
+	selector := windowSelector(opt, spec.Gamepad.ClassRegex, spec.Gamepad.WindowRegex)
+	if selector.empty() {
+		ctrl, err := maa.NewGamepadController(nil, gamepadType, win32.ScreencapNone)
+		if err != nil {
+			return nil, fmt.Errorf("create %s Gamepad controller: %w", gamepadTypeName(gamepadType), err)
+		}
+		return ctrl, nil
+	}
+	window, err := resolveWindow(selector)
+	if err != nil {
+		return nil, err
+	}
+	screencap, err := win32ScreencapMethod(opt.win32Screencap, spec.Gamepad.Screencap)
+	if err != nil {
+		return nil, err
+	}
+	ctrl, err := maa.NewGamepadController(window.Handle, gamepadType, screencap)
+	if err != nil {
+		return nil, fmt.Errorf("create %s Gamepad controller for %s: %w", gamepadTypeName(gamepadType), describeWin32Window(window), err)
+	}
+	return ctrl, nil
+}
+
+// parseGamepadType accepts the PI gamepad_type names; an empty value defaults to
+// Xbox360, matching the ProjectInterface protocol.
+func parseGamepadType(value string) (maa.GamepadType, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "xbox360":
+		return maa.GamepadTypeXbox360, nil
+	case "dualshock4", "ds4":
+		return maa.GamepadTypeDualShock4, nil
+	default:
+		return maa.GamepadTypeXbox360, fmt.Errorf("invalid gamepad type %q; use Xbox360 or DualShock4", value)
+	}
+}
+
+func gamepadTypeName(gamepadType maa.GamepadType) string {
+	if gamepadType == maa.GamepadTypeDualShock4 {
+		return "DualShock4"
+	}
+	return "Xbox360"
 }
 
 // win32Window is a desktop window in a form that is easy to filter and test
@@ -183,8 +249,11 @@ func (s win32Selector) describe() string {
 
 // desktopWindows lists the MaaToolkit desktop windows in the filter-friendly
 // form used by resolveWin32Window.
-func desktopWindows() []win32Window {
-	found := maa.FindDesktopWindows()
+func desktopWindows() ([]win32Window, error) {
+	found, err := maa.FindDesktopWindows()
+	if err != nil {
+		return nil, err
+	}
 	windows := make([]win32Window, 0, len(found))
 	for _, window := range found {
 		windows = append(windows, win32Window{
@@ -194,7 +263,7 @@ func desktopWindows() []win32Window {
 			window:     window,
 		})
 	}
-	return windows
+	return windows, nil
 }
 
 // matchWin32Windows keeps the windows accepted by every configured filter.
@@ -320,7 +389,10 @@ func describeWin32Window(window *maa.DesktopWindow) string {
 // controller, so callers must pass those to MaaFramework instead of rebuilding
 // them from the address.
 func resolveAdbDevice(address, name string) (*maa.AdbDevice, error) {
-	devices := maa.FindAdbDevices()
+	devices, err := maa.FindAdbDevices()
+	if err != nil {
+		return nil, fmt.Errorf("find ADB devices: %w", err)
+	}
 	if len(devices) == 0 {
 		return nil, fmt.Errorf("no ADB devices found; connect a device and check \"maactl adb devices\"")
 	}

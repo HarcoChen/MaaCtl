@@ -1,8 +1,8 @@
 # MaaCtl
 
 `maactl` 是 [MaaFramework](https://github.com/MaaXYZ/MaaFramework) 的命令行客户端。它加载
-ProjectInterface v2（PI）项目，查看控制器、资源与任务，并在指定的 ADB 设备或 Win32 窗口上运行
-PI task 或 Pipeline 节点。
+ProjectInterface v2（PI）项目，查看控制器、资源与任务，并在指定的 ADB 设备、Win32 窗口或虚拟手柄等
+控制器上运行 PI task 或 Pipeline 节点。
 
 - 只提供 **Windows amd64** 的可执行文件；是否自带 MaaFramework 不影响命令行行为。
 - 所有选项都以 `-` 或 `--` 开头，只有命令名和 task/node 名称使用位置参数。
@@ -89,6 +89,7 @@ maactl help run                                  # 查看某条命令的帮助
 | `--win32-handle` | Win32 窗口句柄（十进制或 `0x` 开头的十六进制） |
 | `--win32-class` / `--win32-window` | Win32 窗口类名 / 标题正则（`maactl win32 devices` 可查看） |
 | `--win32-screencap` / `--win32-mouse` / `--win32-keyboard` | 覆盖 Win32 截图与输入方式（默认取 PI `win32` 配置） |
+| `--gamepad-type` | 虚拟手柄类型：`Xbox360`（默认）或 `DualShock4`（默认取 PI `gamepad.gamepad_type`） |
 | `-c, --controller` / `-r, --resource` | 指定 PI controller 与资源 |
 | `--events` | 事件输出：`focus`（默认）/ `all` / `off` |
 | `--stop-after` | 运行指定时长后停止，适合验证与限时运行 |

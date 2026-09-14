@@ -6,7 +6,7 @@ import (
 
 	"maactl/internal/pi"
 
-	"github.com/MaaXYZ/maa-framework-go/v3/controller/win32"
+	"github.com/MaaXYZ/maa-framework-go/v4/controller/win32"
 )
 
 func testWindows() []win32Window {
@@ -117,10 +117,36 @@ func TestWin32InputMethod(t *testing.T) {
 	}
 }
 
+func TestParseGamepadType(t *testing.T) {
+	cases := []struct {
+		value string
+		want  uint64
+	}{
+		{"", 0},
+		{"Xbox360", 0},
+		{"xbox360", 0},
+		{"DualShock4", 1},
+		{"ds4", 1},
+	}
+	for _, tc := range cases {
+		got, err := parseGamepadType(tc.value)
+		if err != nil {
+			t.Errorf("parseGamepadType(%q): %v", tc.value, err)
+			continue
+		}
+		if uint64(got) != tc.want {
+			t.Errorf("parseGamepadType(%q) = %d, want %d", tc.value, uint64(got), tc.want)
+		}
+	}
+	if _, err := parseGamepadType("nope"); err == nil {
+		t.Error("expected an invalid gamepad type to fail")
+	}
+}
+
 func TestCreateControllerRejectsUnsupportedType(t *testing.T) {
 	for _, spec := range []*pi.Controller{
 		{Name: "mac", Type: "MacOS"},
-		{Name: "pad", Type: "Gamepad"},
+		{Name: "play", Type: "PlayCover"},
 		{Name: "empty"},
 	} {
 		_, err := createController(spec, runOptions{})

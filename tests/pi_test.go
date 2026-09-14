@@ -86,6 +86,39 @@ func TestLoadWin32Controller(t *testing.T) {
 	}
 }
 
+// TestLoadGamepadController verifies the gamepad controller block is parsed,
+// including the optional screencap window and the virtual gamepad type.
+func TestLoadGamepadController(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "interface.json")
+	writeFile(t, path, `{
+		"interface_version": 2,
+		"controller": [{
+			"name": "Pad",
+			"type": "Gamepad",
+			"gamepad": {
+				"class_regex": "UnityWndClass",
+				"window_regex": "原神",
+				"gamepad_type": "DualShock4",
+				"screencap": "FramePool"
+			}
+		}]
+	}`)
+	project, err := pi.Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	ctrl, err := project.FindController("")
+	if err != nil {
+		t.Fatalf("find controller: %v", err)
+	}
+	if ctrl.Type != "Gamepad" || ctrl.Gamepad.GamepadType != "DualShock4" {
+		t.Fatalf("unexpected gamepad config: %+v", ctrl.Gamepad)
+	}
+	if ctrl.Gamepad.ClassRegex != "UnityWndClass" || ctrl.Gamepad.WindowRegex != "原神" || ctrl.Gamepad.Screencap != "FramePool" {
+		t.Errorf("unexpected gamepad window config: %+v", ctrl.Gamepad)
+	}
+}
+
 func TestLoadRejectsWrongInterfaceVersion(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "interface.json")
 	writeFile(t, path, `{"interface_version": 1}`)

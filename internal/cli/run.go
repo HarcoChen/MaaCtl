@@ -21,6 +21,7 @@ type runOptions struct {
 	win32Window                      string
 	win32Screencap, win32Mouse       string
 	win32Keyboard                    string
+	gamepadType                      string
 	override, overrideFile           string
 	optionValues, overlay            []string
 	events                           string
@@ -85,6 +86,7 @@ func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
 	flags.StringVar(&opt.win32Screencap, "win32-screencap", "", i18n.Text("Win32 screencap method (default: PI win32.screencap, then all methods)", "Win32 截图方式（默认：PI win32.screencap，其次全部方式）"))
 	flags.StringVar(&opt.win32Mouse, "win32-mouse", "", i18n.Text("Win32 mouse method (default: PI win32.mouse, then Seize)", "Win32 鼠标方式（默认：PI win32.mouse，其次 Seize）"))
 	flags.StringVar(&opt.win32Keyboard, "win32-keyboard", "", i18n.Text("Win32 keyboard method (default: PI win32.keyboard, then Seize)", "Win32 键盘方式（默认：PI win32.keyboard，其次 Seize）"))
+	flags.StringVar(&opt.gamepadType, "gamepad-type", "", i18n.Text("Gamepad type: Xbox360 or DualShock4 (default: PI gamepad.gamepad_type, then Xbox360)", "Gamepad 类型：Xbox360 或 DualShock4（默认：PI gamepad.gamepad_type，其次 Xbox360）"))
 	flags.StringVarP(&opt.override, "override", "o", "", i18n.Text("final Pipeline override JSON", "最终 Pipeline override JSON"))
 	flags.StringVarP(&opt.overrideFile, "override-file", "O", "", i18n.Text("file containing the final Pipeline override JSON", "包含最终 Pipeline override JSON 的文件"))
 	flags.StringArrayVarP(&opt.optionValues, "option", "p", nil, i18n.Text("option value as name=<JSON>; repeatable", "option 值，格式 name=<JSON>；可重复"))

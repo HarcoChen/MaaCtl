@@ -10,7 +10,7 @@ import (
 	"maactl/internal/output"
 	"maactl/internal/pi"
 
-	maa "github.com/MaaXYZ/maa-framework-go/v3"
+	maa "github.com/MaaXYZ/maa-framework-go/v4"
 	"github.com/spf13/cobra"
 )
 
@@ -91,9 +91,9 @@ func inspectResource(global *Options, project *pi.Loaded, spec *pi.Resource, lis
 		return err
 	}
 	defer func() { _ = maa.Release() }()
-	res := maa.NewResource()
-	if res == nil {
-		return fmt.Errorf("create Maa resource")
+	res, err := maa.NewResource()
+	if err != nil {
+		return fmt.Errorf("create Maa resource: %w", err)
 	}
 	defer res.Destroy()
 	paths := make([]string, 0, len(spec.Path))
@@ -105,9 +105,9 @@ func inspectResource(global *Options, project *pi.Loaded, spec *pi.Resource, lis
 		paths = append(paths, full)
 	}
 	if listNodes {
-		nodes, ok := res.GetNodeList()
-		if !ok {
-			return fmt.Errorf("read resource nodes")
+		nodes, err := res.GetNodeList()
+		if err != nil {
+			return fmt.Errorf("read resource nodes: %w", err)
 		}
 		if global.JSON {
 			return output.Stdout(nodes)

@@ -3,7 +3,7 @@ module maactl
 go 1.24
 
 require (
-	github.com/MaaXYZ/maa-framework-go/v3 v3.0.0
+	github.com/MaaXYZ/maa-framework-go/v4 v4.0.0-beta.18
 	github.com/mattn/go-runewidth v0.0.29
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.5

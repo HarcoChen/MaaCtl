@@ -59,11 +59,12 @@ func (a *Agents) UnmarshalJSON(data []byte) error {
 
 // Controller describes a PI controller entry.
 type Controller struct {
-	Name  string      `json:"name"`
-	Label string      `json:"label"`
-	Type  string      `json:"type"`
-	Adb   AdbConfig   `json:"adb"`
-	Win32 Win32Config `json:"win32"`
+	Name    string        `json:"name"`
+	Label   string        `json:"label"`
+	Type    string        `json:"type"`
+	Adb     AdbConfig     `json:"adb"`
+	Win32   Win32Config   `json:"win32"`
+	Gamepad GamepadConfig `json:"gamepad"`
 }
 
 // AdbConfig holds the ADB screencap and input method names from a controller.
@@ -80,6 +81,16 @@ type Win32Config struct {
 	WindowRegex string `json:"window_regex"`
 	Mouse       string `json:"mouse"`
 	Keyboard    string `json:"keyboard"`
+	Screencap   string `json:"screencap"`
+}
+
+// GamepadConfig holds the Gamepad controller configuration from PI. The regex
+// fields optionally select a window to screenshot; without them the controller
+// only drives the virtual gamepad.
+type GamepadConfig struct {
+	ClassRegex  string `json:"class_regex"`
+	WindowRegex string `json:"window_regex"`
+	GamepadType string `json:"gamepad_type"`
 	Screencap   string `json:"screencap"`
 }
 

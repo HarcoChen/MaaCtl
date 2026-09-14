@@ -9,7 +9,7 @@ import (
 	"maactl/internal/maafw"
 	"maactl/internal/output"
 
-	maa "github.com/MaaXYZ/maa-framework-go/v3"
+	maa "github.com/MaaXYZ/maa-framework-go/v4"
 	"github.com/spf13/cobra"
 )
 
@@ -80,7 +80,10 @@ func newDevicesCommand(global *Options, kind string) *cobra.Command {
 }
 
 func listADB(jsonOutput bool) error {
-	devices := maa.FindAdbDevices()
+	devices, err := maa.FindAdbDevices()
+	if err != nil {
+		return fmt.Errorf("find ADB devices: %w", err)
+	}
 	if jsonOutput {
 		out := make([]adbDeviceOutput, 0, len(devices))
 		for _, d := range devices {
@@ -104,7 +107,10 @@ func listADB(jsonOutput bool) error {
 }
 
 func listWin32(jsonOutput bool) error {
-	windows := maa.FindDesktopWindows()
+	windows, err := maa.FindDesktopWindows()
+	if err != nil {
+		return fmt.Errorf("find desktop windows: %w", err)
+	}
 	if jsonOutput {
 		out := make([]desktopWindowOutput, 0, len(windows))
 		for _, w := range windows {
