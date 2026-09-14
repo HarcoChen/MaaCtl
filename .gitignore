@@ -1,6 +1,6 @@
 # Build outputs and runtime artifacts
-maactl.exe
-maactl
+/maactl.exe
+/maactl
 /dist/
 /debug/
 
