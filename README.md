@@ -252,7 +252,7 @@ PI 中的 `import` 会随主 `interface.json` 一同加载。资源路径相对�
 
 `-h` 与 `--help` 等价，`maactl help <command>` 输出相同内容。帮助语言跟随系统：Windows 取用户默认 UI 语言，其他系统读取 `LC_ALL`/`LC_MESSAGES`/`LANG`；中文显示中文，其余显示英文。可用环境变量 `MAACTL_LANG=zh_CN` 或 `MAACTL_LANG=en` 强制覆盖。
 
-顶层帮助只列出命令与一句话说明、全局参数和示例，不再展开各命令的参数；带子命令的命令帮助列出自身参数与子命令说明；叶子命令列出全部可用参数，共享的执行参数只定义一次并标注来源（如 `Execution Flags (inherited from "maactl run")`）。`--version` 没有短参数。
+顶层帮助只列出命令与一句话说明、全局参数和示例，不再展开各命令的参数；带子命令的命令帮助列出自身参数与子命令说明；叶子命令列出全部可用参数，共享的执行参数只定义一次并标注来源（如 `Execution Flags (inherited from "maactl run")`）。`--version` 的短参数是 `-v`（与 `interface --validate` 的 `-v` 不冲突：前者只在顶层可用，后者只在 `interface` 下）。
 
 ```powershell
 ./maactl.exe -h
@@ -263,6 +263,7 @@ PI 中的 `import` 会随主 `interface.json` 一同加载。资源路径相对�
 ./maactl.exe run task --help
 ./maactl.exe resource --help
 ./maactl.exe help run
+./maactl.exe -v
 ./maactl.exe --version
 ```
 

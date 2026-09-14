@@ -53,6 +53,20 @@ func TestInterfaceActionFlags(t *testing.T) {
 	}
 }
 
+// -v is the shorthand of --version at the root, but --validate inside the
+// interface command; both meanings must keep working.
+func TestInterfaceValidateKeepsShorthandV(t *testing.T) {
+	path := interfaceFixture(t)
+	want, err := interfaceOutput("interface", "--validate", "-f", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := interfaceOutput("interface", "-v", "-f", path)
+	if err != nil || got != want {
+		t.Fatalf("interface -v = %q, err = %v; want %q", got, err, want)
+	}
+}
+
 func TestInterfaceRejectsInvalidActions(t *testing.T) {
 	for _, action := range []string{"show", "controllers", "resources", "tasks", "validate", "options", "presets"} {
 		if _, err := interfaceOutput("interface", action); err == nil {

@@ -76,6 +76,18 @@ func TestVersionFlag(t *testing.T) {
 	}
 }
 
+// -v is the shorthand of --version.
+func TestVersionShorthand(t *testing.T) {
+	short := mustHelp(t, "-v")
+	long := mustHelp(t, "--version")
+	if short != long {
+		t.Errorf("-v = %q, --version = %q", short, long)
+	}
+	if !strings.Contains(short, "maactl version "+testVersion) {
+		t.Errorf("unexpected version output: %q", short)
+	}
+}
+
 func TestHelpCommandMatchesDashH(t *testing.T) {
 	for _, parts := range [][]string{
 		{"run"},

@@ -46,9 +46,9 @@ Every option starts with - or --.`, `MaaCtl 加载 ProjectInterface v2 项目，
 	root.PersistentFlags().StringVarP(&global.LibDir, "lib-dir", "l", "", i18n.Text("MaaFramework DLL directory (default: ./maafw/bin)", "MaaFramework DLL 目录（默认：./maafw/bin）"))
 	root.PersistentFlags().StringVarP(&global.InterfacePath, "interface", "f", "", i18n.Text("ProjectInterface file or project directory (default: ./interface.json)", "ProjectInterface 文件或项目目录（默认：./interface.json）"))
 	root.PersistentFlags().BoolVarP(&global.JSON, "json", "j", false, i18n.Text("output JSON; run emits sink events as JSON", "输出 JSON；运行时 sink 事件也输出 JSON"))
-	// Define --version without a shorthand so -v stays reserved for
-	// flag shorthands such as "interface --validate".
-	root.Flags().Bool("version", false, i18n.Text("print version information", "显示版本信息"))
+	// Define --version here with the -v shorthand. It stays a root-local flag so
+	// that -v keeps meaning "interface --validate" inside the interface command.
+	root.Flags().BoolP("version", "v", false, i18n.Text("print version information", "显示版本信息"))
 	root.AddCommand(newADBCommand(&global), newWin32Command(&global), newInterfaceCommand(&global), newResourceCommand(&global), newRunCommand(&global))
 	// Create the default completion command now so its help can be localized.
 	root.InitDefaultCompletionCmd()
