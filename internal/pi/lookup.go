@@ -200,6 +200,20 @@ func ControllerRunnable(ctrl *Controller) bool {
 	return false
 }
 
+// platformName names the current platform for validation messages.
+func platformName() string {
+	switch runtime.GOOS {
+	case "windows":
+		return "Windows"
+	case "darwin":
+		return "macOS"
+	case "linux":
+		return "Linux"
+	default:
+		return runtime.GOOS
+	}
+}
+
 // JoinControllerNames returns the comma-separated names of controllers.
 func JoinControllerNames(items []Controller) string {
 	names := make([]string, len(items))
