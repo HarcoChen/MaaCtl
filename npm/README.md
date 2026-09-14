@@ -6,11 +6,11 @@
 ```powershell
 # 直接运行，无需全局安装
 npx maactl --version
-npx maactl adb devices
-npx maactl interface --tasks -f D:\01_Projects\github\MaaMio
+npx maactl device adb
+npx maactl pi tasks -f D:\01_Projects\github\MaaMio
 
 # 若某些 npx 版本吞掉了参数，用 -- 显式分隔
-npx maactl -- run task "自动挂机卖蛋" -f D:\01_Projects\github\MaaMio --stop-after 10s
+npx maactl -- run task "签到" -f D:\01_Projects\github\MaaMio --stop-after 30s
 ```
 
 `npx maactl ...` 之后的所有参数都会原样传给 `maactl.exe`，包括 `-f/--interface`、

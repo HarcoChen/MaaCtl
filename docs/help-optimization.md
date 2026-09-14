@@ -1,6 +1,12 @@
 # MaaCtl Help 优化方案
 
-> 状态：**已实现**（P0/P1 已落地，实施说明与偏差见 §10；P2 未做）。
+> 状态：**已实现并已被第二版命令面取代**。本文记录的是第一版（`interface --show`、
+> `adb devices` 等）帮助文本的审计与优化；那些命令已经在
+> [pi-cli-design.md](pi-cli-design.md) 的重写中被替换，本文只作为历史记录保留。
+>
+> 现行帮助形态：`help.go` 的「选项 / 执行选项（与子命令共用）/ 继承选项 / 全局选项」分段，
+> 每个共享选项只打印一次；具体命令面见 [cli.md](cli.md)。
+>
 > 对象：`help.go`、各 `newXxxCommand` 的 `Short/Long/Example`、`docs/cli.md` 帮助章节。
 
 ## 1. 现状与证据

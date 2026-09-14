@@ -54,7 +54,7 @@ func (l *Loaded) OptionPlan(controllerName, resName string, task *Task, all bool
 		}
 	}
 	if all {
-		entries = append(entries, l.planUnreferenced(controllerName, resName)...)
+		entries = append(entries, l.planUnreferenced(controllerName, resName, task)...)
 	}
 	return entries
 }
@@ -97,9 +97,9 @@ func (l *Loaded) planOption(name string, layer Layer, parent, controllerName, re
 
 // planUnreferenced appends the options no layer mentions, so `pi options --all`
 // shows the full definition list.
-func (l *Loaded) planUnreferenced(controllerName, resName string) []OptionPlanEntry {
+func (l *Loaded) planUnreferenced(controllerName, resName string, task *Task) []OptionPlanEntry {
 	referenced := map[string]bool{}
-	for _, entry := range l.OptionPlan(controllerName, resName, nil, false) {
+	for _, entry := range l.OptionPlan(controllerName, resName, task, false) {
 		referenced[entry.Name] = true
 	}
 	var entries []OptionPlanEntry

@@ -6,7 +6,7 @@
 
 ```powershell
 npx maactl -v
-npx maactl interface --tasks -f D:\01_Projects\github\MaaMio
+npx maactl pi tasks -f D:\01_Projects\github\MaaMio
 
 npm install -g maactl
 maactl -v
@@ -14,8 +14,8 @@ maactl -v
 
 约束：
 
-1. **参数必须原样透传。** `npx maactl run task "自动挂机卖蛋" -f D:\proj --stop-after 10s` 与
-   `.\maactl.exe run task "自动挂机卖蛋" -f D:\proj --stop-after 10s` 完全等价，包括中文参数、
+1. **参数必须原样透传。** `npx maactl run task "签到" -f D:\proj --stop-after 30s` 与
+   `.\maactl.exe run task "签到" -f D:\proj --stop-after 30s` 完全等价，包括中文参数、
    含空格的路径和 `-`/`--` 前缀的选项。
 2. **工作目录不变。** 包装器不改 `cwd`，因此 `maactl` 默认从**调用者所在目录**读取
    `./interface.json`，与直接运行 exe 一致。
@@ -151,7 +151,7 @@ cd npm
 npm test                                    # 单元测试，离线可跑
 npm run vendor:binary -- ..\maactl.exe      # 把本地构建的 exe 放进 vendor/
 npx --yes --package . maactl -v
-node bin\maactl.js interface --tasks -f D:\01_Projects\github\MaaMio
+node bin\maactl.js pi tasks -f D:\01_Projects\github\MaaMio
 ```
 
 只想验证参数转发而不重新打包时，用 `MAACTL_BINARY` 直接指向本地构建：

@@ -134,7 +134,7 @@ maactl [global flags] <group> [subcommand] [arguments] [flags]
 | `--gamepad-type <Xbox360\|DualShock4>` | 虚拟手柄类型 |
 | `--option <name>=<value>` | 设置配置项取值；可重复（语法见 §7） |
 | `--option-file <path>` | 配置项取值 JSON 文件（结构同 `preset.task[].option`） |
-| `-p, --preset <name>` | 载入预设的任务启用状态与配置项取值 |
+| `--preset <name>` | 载入该 preset 在此 task 上的任务启用状态与配置项取值（仅 `run task`） |
 | `-o, --override <json>` / `--override-file <path>` | 最终 Pipeline override，优先级最高，二者互斥 |
 | `--overlay <dir>` | 在所选资源之后追加加载的资源根目录，可重复 |
 | `--events <focus\|all\|off>` | 事件输出，默认 `focus` |
@@ -348,16 +348,25 @@ global_option（按声明顺序）
 `PI_CLIENT_VERSION`、`PI_CLIENT_LANGUAGE`、`PI_CLIENT_MAAFW_VERSION`、`PI_VERSION`、
 `PI_CONTROLLER`、`PI_RESOURCE`（后两者为已解析 i18n 的单行 JSON）。
 
-## 11. 实现分期
+## 11. 实现状态
 
-| 阶段 | 内容 | 交付 |
+| 阶段 | 内容 | 状态 |
 | --- | --- | --- |
-| P1 | 本文档 | 设计评审基线 |
-| P2 | PI 数据模型 + 加载/import 合并 + i18n | `pi.Load` 覆盖 v2.10.1 全字段，单测覆盖合并顺序 |
-| P3 | option 求值 + preset + 分层 override | `pi.Resolve`，可用 sample interface.json 与 MaaMio 验证 |
-| P4 | 新命令树（`pi`/`device`/`resource`/`run`/`config`） | 短参数不再重载，帮助分层 |
-| P5 | 运行期（pretask、`PI_*`、hash、explain/dry-run、退出码） | 端到端可跑 MaaMio 的签到任务 |
-| P6 | README / docs/cli.md / 迁移说明 / 测试 | 文档与代码一致 |
+| P1 | 本文档 | ✅ |
+| P2 | PI 数据模型 + 加载/import 合并 + i18n | ✅ |
+| P3 | option 求值 + preset + 分层 override | ✅ |
+| P4 | 新命令树（`pi`/`device`/`resource`/`run`/`config`） | ✅ |
+| P5 | 运行期（pretask、`PI_*`、hash、explain/dry-run、退出码） | ✅ |
+| P6 | README / docs / 测试 | ✅ |
+
+校验与计划外补充：`pi validate`（结构化报告）、`pi options` 配置项树、
+`resource hash --verify`、客户端配置读取（`config show/path`）也一并实现。
+
+尚未实现（有意为之）：
+
+- `telemetry` / `focus.trace` 遥测上报（CLI 不上报遥测，`pi info` 仅提示已声明）；
+- `display: modal` 的阻塞确认（CLI 只打印，不等待输入）；
+- 写回客户端配置文件（`config set`）——配置文件由用户的 GUI 客户端负责写入。
 
 ## 12. 与旧版对照（迁移）
 
@@ -371,9 +380,10 @@ global_option（按声明顺序）
 | `maactl resource -i` / `resource -n` | `maactl resource inspect` / `resource nodes` |
 | `maactl run task <name>` / `run -t` | 不变 |
 | `maactl run node <name>` / `run -n` | 不变 |
-| `--option/-p`（旧版计划） | `--option`（无短参数）；`-p` 改为 preset |
-| `--override/-o`、`--override-file/-O` | `-o, --override` 不变；`-O` 不再使用，`--override-file` 只用长参数 |
+| `--option/-p`（旧版计划） | `--option`（无短参数）；`-p` 不再使用 |
+| `--override-file/-O` | `--override-file`（无短参数） |
 
-> 短参数冲突提醒：新版里 `-p` 是 **preset**，`-o` 是 **override**；`--option`、`--option-file`、
-> `--override-file` 都不设短参数，避免再把同一字母指到两件事上。旧设计文档里 `-p` 表示 option、
-> `-O` 表示 override-file，均已废弃。
+> 短参数冲突提醒：新版里 `-o` 是 **override**，`-t/-n` 是 `run` 的快捷形式；
+> `--option`、`--option-file`、`--override-file`、`--preset` 都不设短参数——它们两两重名
+> 或与快捷形式冲突。旧设计里 `-p` 表示 option、`-O` 表示 override-file、`-p` 又表示 preset，
+> 均已废弃。

@@ -1,12 +1,15 @@
 # 目录结构与包职责
 
 ```text
-cmd/maactl/            程序入口（main 包，仅解析参数并调用 cli）
+cmd/maactl/            程序入口（main 包：解析参数、把 ExitError 映射为退出码）
 internal/
-  cli/                 命令树：root、adb/win32、interface、resource、run、execute、controller、agent
-  pi/                  ProjectInterface v2 的数据模型、加载与查找
-  event/               sink 事件输出与 focus 文本渲染
-  help/                帮助渲染器（分区、继承来源、planned 标记）
+  cli/                 命令树：root、pi、pi_options、device、resource、run、execute、
+                       config、controller、agent、exit
+  pi/                  ProjectInterface v2 模型、加载与 import 合并、i18n、校验、
+                       option 求值、Pipeline 合并、按键码表
+  clientconfig/        客户端配置（maa_pi_config.json）读取与发现
+  event/               sink 事件输出、focus 模板与 display 渠道过滤
+  help/                帮助渲染器（分区、继承来源）
   i18n/                帮助语言检测与本地化文本
   maafw/               MaaFramework 运行库定位与初始化
     pack/              从 MaaFramework release 压缩包生成内嵌 payload
@@ -17,7 +20,7 @@ tools/packmaafw/       打包工具：下载/解包 release，只取 bin/ 生成
 assets/                下载的 MaaFramework release 压缩包（不入库）
 maafw.version          本项目使用的 MaaFramework 版本
 npm/                   npm 分发包：npx maactl / npm i -g maactl 的参数转发器
-tests/                 跨包测试（CLI 端到端、PI 加载与打包）
+tests/                 跨包测试（CLI 端到端、PI 加载/合并/求值/校验、打包）
 docs/                  设计文档
 maafw/                 本地 MaaFramework 运行库（不入库）
 ```
@@ -25,10 +28,31 @@ maafw/                 本地 MaaFramework 运行库（不入库）
 `internal/` 内的包只在本模块可用；`tests/` 通过 `internal/cli` 等导出接口运行 CLI，
 因此不需要把内部实现暴露给外部。
 
+## internal/pi 的拆分
+
+| 文件 | 内容 |
+| --- | --- |
+| `model.go` | PI v2.10.1 全字段模型、保序 `OptionMap`、`DefaultCase`、`agent`/`pretask` 的单对象或数组 |
+| `load.go` | 文件/目录解析、JSONC、按协议的 import 收集与合并顺序 |
+| `i18n.go` | `languages` 协商与 `$label` 解析（含对 JSON 值整体解析，供 `PI_*` 使用） |
+| `lookup.go` | 控制器/资源/任务/preset/group 解析、适用性判断、平台可运行类型 |
+| `validate.go` | 结构化校验报告（error/warning）与 `--strict` 语义 |
+| `option.go` | option 求值：取值优先级、嵌套选项、checkbox 计数、input/hotkey 转换、密码掩码 |
+| `pipeline.go` | Pipeline override 合并与模板替换（整串占位符保留类型） |
+| `plan.go` | `pi options` 的只读配置项树 |
+| `hotkey.go` | 快捷键字符串解析与 Adb/Win32 虚拟按键码映射 |
+
+## 失败与退出码
+
+`internal/cli` 用 `ExitError{Code, Err}` 给失败标注退出码；`cmd/maactl` 只负责把它翻译成
+进程退出码。查询命令在参数或 PI 有问题时返回 2，运行时按阶段返回 3（资源）、4（控制器）、
+5（pretask）、6（任务）、7（超时）、8（中断）。细节见 [cli.md](cli.md#退出码)。
+
 ## 相关文档
 
 - [cli.md](cli.md)：命令行参考
+- [pi-cli-design.md](pi-cli-design.md)：现行 CLI 设计（第二版）
 - [build.md](build.md)：构建、打包与运行库查找顺序
 - [npm-package.md](npm-package.md)：npm 分发包的设计与实现
 - [release.md](release.md)：发版与 npm 发布流程
-- [maafw-cli-design.md](maafw-cli-design.md)、[help-optimization.md](help-optimization.md)：早期设计与帮助文本审计
+- [maafw-cli-design.md](maafw-cli-design.md)：第一版设计（已废弃）

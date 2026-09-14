@@ -43,6 +43,9 @@ func piFixture(t *testing.T) string {
 			"模式": {"type": "select", "default_case": "普通", "cases": [
 				{"name": "普通", "pipeline_override": {"Mode": {"value": 1}}},
 				{"name": "急速", "pipeline_override": {"Mode": {"value": 2}}}
+			]},
+			"未引用": {"type": "switch", "default_case": "No", "cases": [
+				{"name": "Yes"}, {"name": "No"}
 			]}
 		},
 		"preset": [{"name": "日常", "task": [{"name": "打开游戏"}]}]
@@ -67,6 +70,7 @@ func TestPISubcommandsRun(t *testing.T) {
 		{[]string{"pi", "tasks", "-f", path}, []string{"entry", "group", "打开游戏", "PC任务"}},
 		{[]string{"pi", "groups", "-f", path}, []string{"default_expand", "daily", "日常"}},
 		{[]string{"pi", "options", "-f", path}, []string{"[global_option]", "模式", "[select]"}},
+		{[]string{"pi", "options", "-f", path, "--all"}, []string{"[option]", "未引用"}},
 		{[]string{"pi", "presets", "-f", path}, []string{"日常", "tasks", "disabled"}},
 		{[]string{"pi", "settings", "-f", path}, []string{"global", "模式"}},
 	}
@@ -149,6 +153,27 @@ func TestPIOptionsTreeInspectsTaskLayers(t *testing.T) {
 	}
 	if !strings.Contains(out, "模式") {
 		t.Errorf("global option should be listed:\n%s", out)
+	}
+}
+
+// TestPIOptionsAllListsUnreferencedOptionsOnce checks --all does not duplicate
+// options that a layer already references.
+func TestPIOptionsAllListsUnreferencedOptionsOnce(t *testing.T) {
+	path := piFixture(t)
+	out, err := runCLI("pi", "options", "-f", path, "-t", "打开游戏", "--all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layerSection := out[:strings.Index(out, "[option]")]
+	definitionSection := out[strings.Index(out, "[option]"):]
+	if !strings.Contains(layerSection, "模式") {
+		t.Fatalf("the referenced option should appear in its layer:\n%s", out)
+	}
+	if strings.Contains(definitionSection, "模式") {
+		t.Errorf("a referenced option must not appear under [option]:\n%s", out)
+	}
+	if !strings.Contains(definitionSection, "未引用") {
+		t.Errorf("the unreferenced option should appear under [option]:\n%s", out)
 	}
 }
 
