@@ -59,4 +59,5 @@ npm install -g .
 maactl --version
 ```
 
-完整的命令说明见 [MaaCtl 主仓库](https://github.com/TanyaShue/MaaCtl#readme)。
+完整的命令说明见 [MaaCtl 命令行参考](https://github.com/TanyaShue/MaaCtl/blob/main/docs/cli.md)，
+安装方式见 [主仓库 README](https://github.com/TanyaShue/MaaCtl#readme)。

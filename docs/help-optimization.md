@@ -1,7 +1,7 @@
 # MaaCtl Help 优化方案
 
 > 状态：**已实现**（P0/P1 已落地，实施说明与偏差见 §10；P2 未做）。
-> 对象：`help.go`、各 `newXxxCommand` 的 `Short/Long/Example`、`README.md` 帮助章节。
+> 对象：`help.go`、各 `newXxxCommand` 的 `Short/Long/Example`、`docs/cli.md` 帮助章节。
 
 ## 1. 现状与证据
 
@@ -38,7 +38,7 @@
 ### 1.2 与其他文件的相互影响
 
 - `interface_test.go` 的 `TestInterfaceHelpUsesFlags` 断言**根帮助包含**所有 `--action` 旗标。若根帮助改为概览式，该测试必须同步改（断言迁移到 `maactl interface -h`）。
-- `README.md` "帮助与 JSON" 章节承诺"顶层帮助列出所有命令、子命令及参数含义，全局参数只列一次"——现状 H1/H3/H5 与承诺不符，需一并改写。
+- `docs/cli.md` “帮助与 JSON” 章节承诺“顶层帮助列出所有命令、子命令及参数含义，全局参数只列一次”——现状 H1/H3/H5 与承诺不符，需一并改写。
 
 ## 2. 设计原则（Help Style Guide）
 
@@ -250,7 +250,7 @@ Examples:
 
 ## 7. 文档同步
 
-- `README.md` "帮助与 JSON" 章节按新行为改写，并补充 `maactl help <command>`。
+- `docs/cli.md` “帮助与 JSON” 章节按新行为改写，并补充 `maactl help <command>`。
 - `docs/maafw-cli-design.md`：
   - `--interface/-i` → `--interface/-f`（与实现、README 一致）；
   - `--events text|jsonl|off` → `focus|all|off`；

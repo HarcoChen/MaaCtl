@@ -1,0 +1,82 @@
+# 发版与 npm 发布
+
+推送符合 SemVer 的 tag（`v<major>.<minor>.<patch>[-alpha.N|-beta.N|-rc.N]`，匹配 `v[0-9]*`）会触发
+`.github/workflows/release.yml`：
+
+1. `version`：校验 tag 是否符合 SemVer，计算是否预发布、预发布通道和上一个正式版 tag；
+2. `build`：在 Windows runner 上跑 `go test ./...` 与 `go test -tags bundled ./...`，执行
+   `go run ./tools/packmaafw` 下载并打包 MaaFramework（版本由 `maafw.version` 钉住），再用
+   `-ldflags "-X main.version=<tag>"` 构建两个 exe，并校验一个确实携带了 MaaFramework、另一个
+   确实没有：
+   - `dist/maactl.exe`：自带 MaaFramework（`-tags bundled`）；
+   - `dist/maactl-lite.exe`：不携带 DLL；
+3. `changelog`：生成当前版本与上一个正式版之间的更新日志，按 feat/fix/perf/refactor/docs 等分组
+   并附 commit 链接；
+4. `release`：等以上两个任务完成后统一创建 GitHub Release，并同时上传两个 exe。正式版发布为
+   Latest；`-alpha`/`-beta`/`-rc` 等预发布版本标记为 Pre-release（标题带通道名），不会成为 Latest。
+   重复执行会更新已有 Release 并覆盖 exe；
+5. `npm`：调用可复用工作流 `.github/workflows/npm-publish.yml`，把该 tag 对应的版本发布到 npm。
+   正式版打 `latest`，预发布版本按通道打 `alpha`/`beta`/`rc`。
+
+```powershell
+# 发一个正式版
+git tag -a v0.1.2 -m "MaaCtl v0.1.2" && git push origin v0.1.2
+
+# 发一个预发布（npm 上打 beta 标签，不会动 latest）
+git tag -a v0.1.2-beta.1 -m "MaaCtl v0.1.2-beta.1" && git push origin v0.1.2-beta.1
+```
+
+## 发布到 npm
+
+`.github/workflows/npm-publish.yml` 是唯一的 npm 发布入口，有两种触发方式：
+
+- `workflow_call`（自动）：`release.yml` 在 `release` 任务完成、GitHub Release 建好之后调用它，
+  因此推 `v*` tag 发版就会自动发 npm 包；
+- `workflow_dispatch`（手动）：重发或补发某个已发布的版本。
+
+```powershell
+gh workflow run npm-publish.yml -f tag=v0.1.1                  # 补发 / 重发
+gh workflow run npm-publish.yml -f tag=v0.1.2 -f dry_run=true   # 只演练，不真正 publish
+```
+
+工作流流程：checkout 该 tag → `release.py metadata` 算出 version/channel → 确认 tag 里存在
+`npm/` → `gh release download` 取回 Release 中已由 `build` 验证过的 `maactl.exe` → `npm version`
+对齐包版本并校验 exe 的 `--version` 确实包含该版本号 → `npm test` → `node scripts/vendor-binary.js`
+把 exe 放进 `npm/vendor/` → 查询 npm 上是否已有该版本（有则跳过）→
+`npm publish --access public --provenance --tag <latest|alpha|beta|rc>`。
+
+### 为什么不用 `on: release: published`
+
+Release 是 `release.yml` 用内置 `GITHUB_TOKEN` 创建的，而 GitHub 不会为 `GITHUB_TOKEN` 导致的
+事件启动新的工作流，这样写的独立工作流会永远不触发。写成可复用工作流还有一个好处：发布逻辑只有
+一份，手动重发与自动发布的行为完全一致。
+
+### 配置
+
+发布需要仓库配置 `NPM_TOKEN`（npm Automation token，具备 publish 权限）secret；未配置时该任务
+只打印警告并跳过，不会让发版失败（fork 与本地触发都安全）。目标版本已存在于 npm 时同样跳过而不是
+报错——npm 不允许覆盖已发布的版本号。
+
+```powershell
+gh secret set NPM_TOKEN -b "<npm token>"
+gh secret list
+```
+
+### 发布后自查
+
+发布成功后 registry 还要做几十秒到十几分钟的异步处理（30 MB 级的 exe 要扫描，带 provenance 的
+版本还要校验 attestation）。这期间 `npm view maactl@<version>` 依旧是 404，日志里会出现
+`Your package is being processed and may take a few minutes to become available.`——都属正常，
+不要据此判定发布失败，也不要急着重新 dispatch，等几分钟再查 dist-tags 即可：
+
+```powershell
+# 发布后的自查
+Invoke-RestMethod https://registry.npmjs.org/-/package/maactl/dist-tags
+npm view maactl dist-tags --registry=https://registry.npmjs.org
+
+# 校验 provenance 签名（默认源是 npmmirror 时必须显式指定 registry，否则取不到 TUF 公钥）
+npm audit signatures --registry=https://registry.npmjs.org
+```
+
+`npm/**` 有改动时，`.github/workflows/npm.yml` 会单独跑包装器测试，并在 Node 22 上用轻量版 exe
+做一次 `npx --package . maactl -v` 冒烟。
