@@ -32,7 +32,7 @@ jobs:
         run: python3 .github/scripts/release.py metadata --tag "${GITHUB_REF_NAME}" >> "${GITHUB_OUTPUT}"
 
   build:
-    name: Build Windows executable
+    name: Build Windows executables
     runs-on: windows-latest
     needs: version
     env:
@@ -46,19 +46,40 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Test
-        run: go test ./...
-      - name: Build maactl.exe
+        run: |
+          go test ./...
+          go test -tags bundled ./...
+      - name: Bundle MaaFramework
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: go run ./tools/packmaafw
+      - name: Build executables
         shell: pwsh
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          go build -trimpath -ldflags "-s -w -X main.version=$env:VERSION" -o dist/maactl.exe ./cmd/maactl
-      - name: Upload executable
+          # Self-contained: MaaFramework is embedded and unpacked on first use.
+          go build -trimpath -tags bundled -ldflags "-s -w -X main.version=$env:VERSION" -o dist/maactl.exe ./cmd/maactl
+          # Lite: loads MaaFramework from ./maafw/bin or --lib-dir.
+          go build -trimpath -ldflags "-s -w -X main.version=$env:VERSION" -o dist/maactl-lite.exe ./cmd/maactl
+      - name: Verify executables
+        shell: pwsh
+        run: |
+          $full = "$(& dist/maactl.exe --version)"
+          if ($full -notmatch 'MaaFramework v') { throw "dist/maactl.exe does not carry MaaFramework: $full" }
+          $lite = "$(& dist/maactl-lite.exe --version)"
+          if ($lite -match 'MaaFramework v') { throw "dist/maactl-lite.exe unexpectedly carries MaaFramework: $lite" }
+          Write-Host $full
+          Write-Host $lite
+      - name: Upload executables
         uses: actions/upload-artifact@v7
         with:
           name: maactl-windows-amd64
-          path: dist/maactl.exe
+          path: |
+            dist/maactl.exe
+            dist/maactl-lite.exe
           if-no-files-found: error
 
   changelog:
@@ -90,7 +111,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [version, build, changelog]
     steps:
-      - name: Download executable
+      - name: Download executables
         uses: actions/download-artifact@v8
         with:
           name: maactl-windows-amd64
@@ -121,7 +142,7 @@ jobs:
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" "${flags[@]}"
-            gh release upload "$TAG" dist/maactl.exe --clobber
+            gh release upload "$TAG" dist/maactl.exe dist/maactl-lite.exe --clobber
           else
-            gh release create "$TAG" dist/maactl.exe "${flags[@]}"
+            gh release create "$TAG" dist/maactl.exe dist/maactl-lite.exe "${flags[@]}"
           fi

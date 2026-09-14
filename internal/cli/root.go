@@ -3,9 +3,11 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"maactl/internal/help"
 	"maactl/internal/i18n"
+	"maactl/internal/maafw"
 
 	"github.com/spf13/cobra"
 )
@@ -25,7 +27,7 @@ func NewRootCommand(version string) *cobra.Command {
 	var global Options
 	root := &cobra.Command{
 		Use:     "maactl",
-		Version: version,
+		Version: versionLabel(version),
 		Short:   i18n.Text("MaaFramework and ProjectInterface command-line client", "MaaFramework 与 ProjectInterface 命令行客户端"),
 		Long: i18n.Text(`MaaCtl loads ProjectInterface v2 projects, inspects MaaFramework resources,
 and runs Pipeline tasks.
@@ -53,6 +55,15 @@ Every option starts with - or --.`, `MaaCtl 加载 ProjectInterface v2 项目，
 	localizeCompletion(root)
 	help.SetFullHelp(root)
 	return root
+}
+
+// versionLabel appends the bundled MaaFramework version so users can tell which
+// runtime a self-contained executable carries.
+func versionLabel(version string) string {
+	if bundled := maafw.BundledVersion(); strings.TrimSpace(bundled) != "" {
+		return fmt.Sprintf("%s (MaaFramework %s)", version, bundled)
+	}
+	return version
 }
 
 // localizeCompletion translates the cobra-generated completion command. Its

@@ -15,9 +15,14 @@ internal/
   help/                帮助渲染器（分区、继承来源、planned 标记）
   i18n/                帮助语言检测与本地化文本
   maafw/               MaaFramework 运行库定位与初始化
+    pack/              从 MaaFramework release 压缩包生成内嵌 payload
+    bundled/           内嵌 payload 的编译期承载与运行期解包
   output/              文本与 JSON 输出辅助
   table/               终端宽度对齐的表格渲染
-tests/                 跨包测试（CLI 端到端与 PI 加载）
+tools/packmaafw/       打包工具：下载/解包 release，只取 bin/ 生成 payload
+assets/                下载的 MaaFramework release 压缩包（不入库）
+maafw.version          本项目使用的 MaaFramework 版本
+tests/                 跨包测试（CLI 端到端、PI 加载与打包）
 docs/                  设计文档
 maafw/                 本地 MaaFramework 运行库（不入库）
 ```
@@ -26,12 +31,22 @@ maafw/                 本地 MaaFramework 运行库（不入库）
 
 ## 构建
 
-```powershell
-go build -o maactl.exe ./cmd/maactl
+同一个源码树通过 `bundled` 编译标签产出两种可执行文件：
 
-# 运行全部测试（包括 tests/ 下的 CLI 端到端测试）
+```powershell
+# 自带 MaaFramework（自包含，开箱即用）：先生成 payload，再用 -tags bundled 构建
+go run ./tools/packmaafw
+go build -tags bundled -o maactl.exe ./cmd/maactl
+
+# 轻量版：不内嵌，运行时从 ./maafw/bin 或 --lib-dir 加载
+go build -o maactl-lite.exe ./cmd/maactl
+
+# 运行全部测试（两种构建各跑一遍）
 go test ./...
+go test -tags bundled ./...
 ```
+
+自带 MaaFramework 的构建约 33 MiB，轻量版约 8 MiB；两者的命令行行为完全一致，区别只在运行库来源。
 
 默认从**当前工作目录**读取 PI，而不是从 `maactl.exe` 所在目录读取：
 
@@ -39,7 +54,7 @@ go test ./...
 ./interface.json    # ProjectInterface v2 文件
 ```
 
-MaaFramework 运行库优先从当前目录的 `./maafw/bin/` 加载；为兼容已有部署，找不到时也会尝试 `maactl.exe` 周边的 `maafw/bin`。`--interface`（`-f`）可指定 `interface.json` 文件或包含它的项目目录。`--lib-dir`（`-l`）可指定其它 MaaFramework 运行库目录。
+MaaFramework 运行库的查找顺序为：`--lib-dir`（`-l`）> 内嵌在 exe 中的自带运行库 > 当前目录的 `./maafw/bin/` > `maactl.exe` 周边的 `maafw/bin`。即：自包含构建默认使用自带运行库，除非用户显式指定 `--lib-dir`；轻量版则按上述路径查找。`--interface`（`-f`）可指定 `interface.json` 文件或包含它的项目目录。
 
 ```powershell
 # 在当前目录的 interface.json 上操作
@@ -53,6 +68,44 @@ MaaFramework 运行库优先从当前目录的 `./maafw/bin/` 加载；为兼容
   -f D:\projects\demo\interface.json `
   -l D:\tools\maafw\bin
 ```
+
+## 自带 MaaFramework（打包）
+
+`tools/packmaafw` 从 MaaFramework 官方 release 压缩包里**只取 `bin/` 目录**（docs、sample、include、tools、symbol 全部丢弃），重新压缩成 `internal/maafw/bundled/payload/bin.zip` 并写下 `version.txt`。带上 `-tags bundled` 构建时，这个 payload 会被 `go:embed` 进 exe。
+
+```powershell
+# 1. 生成 payload
+#    本地优先：assets/ 里匹配 platform/version 的压缩包会被直接使用，不会联网下载
+go run ./tools/packmaafw
+
+# 指定其它压缩包（路径或 URL）
+go run ./tools/packmaafw -archive D:\downloads\MAA-win-x86_64-v5.13.0.zip
+
+# 换版本/平台（本地没有对应压缩包时才会下载，并缓存到 assets/）
+go run ./tools/packmaafw -version v5.14.0 -platform win-x86_64
+
+# 2. 构建两种 exe
+go build -tags bundled -o maactl.exe ./cmd/maactl      # 携带 DLL，约 33 MiB
+go build -o maactl-lite.exe ./cmd/maactl               # 不携带 DLL，约 8 MiB
+```
+
+打包工具的压缩包来源优先级：`-archive` 指定的路径 > `assets/`（可用 `-assets` 换目录）里匹配的压缩包 > 下载。也就是说，**本地已有压缩包时不会联网**；只有本地没有时，才按 `maafw.version`（或 `-version`）下载 `MAA-<platform>-<version>.zip` 并缓存到 `assets/`（不入库）。下载与 API 查询均支持 `GH_TOKEN`/`GITHUB_TOKEN`（提高速率限制），连接卡住超过 60 秒会超时重试，4xx 直接失败。
+
+运行时，内嵌的 payload 会解包到用户缓存目录并复用：
+
+```text
+%LOCALAPPDATA%\maactl\maafw\<version>\bin\      # Windows
+~/.cache/maactl/maafw/<version>/bin/            # Linux（macOS 为 ~/Library/Caches）
+```
+
+`MaaFramework.dll` 最后写入，所以“该文件存在”即代表解包完整，中途中断会在下次运行时重做。自带版本会显示在版本信息里：
+
+```powershell
+./maactl.exe --version       # maactl version 0.1.0 (MaaFramework v5.13.0)
+./maactl-lite.exe --version  # maactl version 0.1.0
+```
+
+升级 MaaFramework 只需改 `maafw.version`（或加 `-version`）后重新打包与构建；`--lib-dir`（`-l`）始终可覆盖自带运行库。带 `-tags bundled` 但未先生成 payload 时，构建仍会成功，但运行时会输出明确告警并回退到 `./maafw/bin`。
 
 ## 查看项目
 
@@ -229,13 +282,18 @@ PI 中的 `import` 会随主 `interface.json` 一同加载。资源路径相对�
 推送符合 SemVer 的 tag（`v<major>.<minor>.<patch>[-alpha.N|-beta.N|-rc.N]`，匹配 `v[0-9]*`）会触发 `.github/workflows/release.yml`：
 
 1. `version`：校验 tag 是否符合 SemVer，计算是否预发布、预发布通道和上一个正式版 tag；
-2. `build`：在 Windows runner 上运行 `go test ./...`，并用 `-ldflags "-X main.version=<tag>"` 构建 `dist/maactl.exe`；
+2. `build`：在 Windows runner 上跑 `go test ./...` 与 `go test -tags bundled ./...`，执行 `go run ./tools/packmaafw` 下载并打包 MaaFramework（版本由 `maafw.version` 钉住），再用 `-ldflags "-X main.version=<tag>"` 构建两个 exe，并校验一个确实携带了 MaaFramework、另一个确实没有：
+   - `dist/maactl.exe`：自带 MaaFramework（`-tags bundled`）；
+   - `dist/maactl-lite.exe`：不携带 DLL；
 3. `changelog`：生成当前版本与上一个正式版之间的更新日志，按 feat/fix/perf/refactor/docs 等分组并附 commit 链接；
-4. `release`：等以上两个任务完成后统一创建 GitHub Release。正式版发布为 Latest；`-alpha`/`-beta`/`-rc` 等预发布版本标记为 Pre-release（标题带通道名），不会成为 Latest。重复执行会更新已有 Release 并覆盖 exe。
+4. `release`：等以上两个任务完成后统一创建 GitHub Release，并同时上传两个 exe。正式版发布为 Latest；`-alpha`/`-beta`/`-rc` 等预发布版本标记为 Pre-release（标题带通道名），不会成为 Latest。重复执行会更新已有 Release 并覆盖 exe。
 
 本地验证版本注入：
 
 ```powershell
-go build -ldflags "-X main.version=1.2.3-beta.1" -o maactl.exe ./cmd/maactl
-./maactl.exe --version   # maactl version 1.2.3-beta.1
+go run ./tools/packmaafw
+go build -tags bundled -ldflags "-X main.version=1.2.3-beta.1" -o maactl.exe ./cmd/maactl
+go build -ldflags "-X main.version=1.2.3-beta.1" -o maactl-lite.exe ./cmd/maactl
+./maactl.exe --version             # maactl version 1.2.3-beta.1 (MaaFramework v5.13.0)
+./maactl-lite.exe --version        # maactl version 1.2.3-beta.1
 ```
