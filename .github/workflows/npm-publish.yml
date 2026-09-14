@@ -124,9 +124,12 @@ jobs:
           $already = if ($LASTEXITCODE -eq 0) { 'true' } else { 'false' }
           Write-Host "maactl@${version} already on npm: $already"
           "already=$already" >> $env:GITHUB_OUTPUT
+          # npm exits 1 when the version does not exist yet, which is the normal
+          # "not published" answer: do not let that exit code fail the step.
+          exit 0
 
       - name: Publish to npm
-        if: env.NODE_AUTH_TOKEN != '' && env.DRY_RUN != 'true' && steps.exists.outputs.already == 'false'
+        if: success() && env.NODE_AUTH_TOKEN != '' && env.DRY_RUN != 'true' && steps.exists.outputs.already == 'false'
         working-directory: npm
         shell: pwsh
         env:
@@ -137,7 +140,7 @@ jobs:
           npm publish --access public --provenance --tag "$tag"
 
       - name: Report why nothing was published
-        if: env.NODE_AUTH_TOKEN == '' || env.DRY_RUN == 'true' || steps.exists.outputs.already == 'true'
+        if: success() && (env.NODE_AUTH_TOKEN == '' || env.DRY_RUN == 'true' || steps.exists.outputs.already == 'true')
         shell: pwsh
         run: |
           if ($env:NODE_AUTH_TOKEN -eq '') {
