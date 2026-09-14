@@ -1,9 +1,17 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
+
+// TestMain pins the help language so assertions are deterministic on any
+// system locale; individual tests override MAACTL_LANG when needed.
+func TestMain(m *testing.M) {
+	_ = os.Setenv("MAACTL_LANG", "en")
+	os.Exit(m.Run())
+}
 
 func mustHelp(t *testing.T, args ...string) string {
 	t.Helper()
@@ -137,6 +145,66 @@ func TestDevicesHelpUsesGlobalJSON(t *testing.T) {
 	global := out[strings.Index(out, "Global Flags:"):]
 	if !strings.Contains(global, "-j, --json") {
 		t.Errorf("adb devices should use the global json flag:\n%s", out)
+	}
+}
+
+func TestHelpLanguageOverride(t *testing.T) {
+	t.Setenv("MAACTL_LANG", "zh_CN")
+	out := mustHelp(t, "-h")
+	for _, want := range []string{
+		"用法：",
+		"命令：",
+		"全局选项：",
+		"示例：",
+		"查看 ADB 设备",
+		"运行 PI task 或 Pipeline 节点",
+		`使用 "maactl <command> --help" 查看某个命令的更多信息。`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("Chinese help is missing %q\n%s", want, out)
+		}
+	}
+	for _, unwanted := range []string{"Usage:", "Commands:", "Global Flags:", "Examples:"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("Chinese help leaked English section title %q\n%s", unwanted, out)
+		}
+	}
+}
+
+func TestChineseHelpSections(t *testing.T) {
+	t.Setenv("MAACTL_LANG", "zh-Hans")
+	runHelp := mustHelp(t, "run", "-h")
+	for _, want := range []string{"执行选项（与子命令共用）：", "计划中的选项：", "（计划中）", "事件输出", `（默认 "focus"）`} {
+		if !strings.Contains(runHelp, want) {
+			t.Errorf("Chinese run help is missing %q\n%s", want, runHelp)
+		}
+	}
+	iface := mustHelp(t, "interface", "-h")
+	if !strings.Contains(iface, "操作：") || !strings.Contains(iface, "计划中的选项：") || !strings.Contains(iface, "列出任务") {
+		t.Errorf("Chinese interface help is incomplete\n%s", iface)
+	}
+	nodes := mustHelp(t, "resource", "nodes", "-h")
+	if !strings.Contains(nodes, `继承选项（来自 "maactl resource"）：`) {
+		t.Errorf("Chinese inherited flag section missing\n%s", nodes)
+	}
+	task := mustHelp(t, "run", "task", "-h")
+	if !strings.Contains(task, `执行选项（继承自 "maactl run"）：`) {
+		t.Errorf("Chinese inherited execution section missing\n%s", task)
+	}
+	completion := mustHelp(t, "completion", "-h")
+	if !strings.Contains(completion, "为指定的 shell 生成自动补全脚本") || !strings.Contains(completion, "为 bash 生成自动补全脚本") {
+		t.Errorf("Chinese completion help is incomplete\n%s", completion)
+	}
+}
+
+func TestEnglishHelpStaysEnglish(t *testing.T) {
+	t.Setenv("MAACTL_LANG", "en_US.UTF-8")
+	out := mustHelp(t, "run", "-h")
+	if !strings.Contains(out, "Execution Flags (shared with subcommands):") {
+		t.Errorf("English run help missing section\n%s", out)
+	}
+	if strings.Contains(out, "计划中的选项") || strings.Contains(out, "用法：") {
+		t.Errorf("English help leaked Chinese section titles\n%s", out)
 	}
 }
 

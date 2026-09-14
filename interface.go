@@ -12,18 +12,19 @@ import (
 
 func newInterfaceCommand(global *cliOptions) *cobra.Command {
 	actions := []struct{ name, shorthand, description string }{
-		{"show", "s", "show ProjectInterface summary"},
-		{"controllers", "c", "list controllers (name, label, type)"},
-		{"resources", "r", "list resources (name, label, path)"},
-		{"tasks", "t", "list tasks (name, label, entry)"},
-		{"validate", "v", "validate that the ProjectInterface loads"},
-		{"options", "", "list PI option definitions"},
-		{"presets", "", "list PI presets"},
+		{"show", "s", localized("show ProjectInterface summary", "显示 ProjectInterface 概览")},
+		{"controllers", "c", localized("list controllers (name, label, type)", "列出控制器（名称、显示名称、类型）")},
+		{"resources", "r", localized("list resources (name, label, path)", "列出资源（名称、显示名称、路径）")},
+		{"tasks", "t", localized("list tasks (name, label, entry)", "列出任务（名称、显示名称、入口节点）")},
+		{"validate", "v", localized("validate that the ProjectInterface loads", "验证 ProjectInterface 是否可加载")},
+		{"options", "", localized("list PI option definitions", "列出 PI option 定义")},
+		{"presets", "", localized("list PI presets", "列出 PI preset")},
 	}
 	cmd := &cobra.Command{
-		Use: "interface", Short: "Inspect and validate a ProjectInterface",
-		Long: `Exactly one action is required: --show, --controllers, --resources, --tasks,
-or --validate. --options and --presets are planned.`,
+		Use: "interface", Short: localized("Inspect and validate a ProjectInterface", "检查和验证 ProjectInterface"),
+		Long: localized(`Exactly one action is required: --show, --controllers, --resources, --tasks,
+or --validate. --options and --presets are planned.`, `必须且只能选择一个操作：--show、--controllers、--resources、--tasks
+或 --validate；--options 和 --presets 尚未实现。`),
 		Example: `  maactl interface --tasks -f D:\MaaMio
   maactl interface --validate -f D:\MaaMio --json`,
 		Args: cobra.NoArgs,

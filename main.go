@@ -55,33 +55,62 @@ func newRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:     "maactl",
 		Version: version,
-		Short:   "MaaFramework and ProjectInterface command-line client",
-		Long: `MaaCtl loads ProjectInterface v2 projects, inspects MaaFramework resources,
+		Short:   localized("MaaFramework and ProjectInterface command-line client", "MaaFramework 与 ProjectInterface 命令行客户端"),
+		Long: localized(`MaaCtl loads ProjectInterface v2 projects, inspects MaaFramework resources,
 and runs Pipeline tasks.
 
 Use positional arguments only for commands and required task/node names.
-Every option starts with - or --.`,
+Every option starts with - or --.`, `MaaCtl 加载 ProjectInterface v2 项目，检查 MaaFramework 资源，
+并运行 Pipeline 任务。
+
+只有命令名和必需的 task/node 名称使用位置参数。所有选项以 - 或 -- 开头。`),
 		Example: `  maactl interface --show -f D:\projects\demo
   maactl run task "自动挂机卖蛋" -f D:\projects\demo --stop-after 10s
   maactl adb devices --json`,
 		SilenceErrors: true, SilenceUsage: true, Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	root.PersistentFlags().StringVarP(&global.libDir, "lib-dir", "l", "", "MaaFramework DLL directory (default: ./maafw/bin)")
-	root.PersistentFlags().StringVarP(&global.interfacePath, "interface", "f", "", "ProjectInterface file or project directory (default: ./interface.json)")
-	root.PersistentFlags().BoolVarP(&global.json, "json", "j", false, "output JSON; run emits sink events as JSON")
+	root.PersistentFlags().StringVarP(&global.libDir, "lib-dir", "l", "", localized("MaaFramework DLL directory (default: ./maafw/bin)", "MaaFramework DLL 目录（默认：./maafw/bin）"))
+	root.PersistentFlags().StringVarP(&global.interfacePath, "interface", "f", "", localized("ProjectInterface file or project directory (default: ./interface.json)", "ProjectInterface 文件或项目目录（默认：./interface.json）"))
+	root.PersistentFlags().BoolVarP(&global.json, "json", "j", false, localized("output JSON; run emits sink events as JSON", "输出 JSON；运行时 sink 事件也输出 JSON"))
 	// Define --version without a shorthand so -v stays reserved for
 	// flag shorthands such as "interface --validate".
-	root.Flags().Bool("version", false, "print version information")
+	root.Flags().Bool("version", false, localized("print version information", "显示版本信息"))
 	root.AddCommand(newADBCommand(&global), newWin32Command(&global), newInterfaceCommand(&global), newResourceCommand(&global), newRunCommand(&global))
+	// Create the default completion command now so its help can be localized.
+	root.InitDefaultCompletionCmd()
+	localizeCompletion(root)
 	setFullHelp(root)
 	return root
 }
 
+// localizeCompletion translates the cobra-generated completion command. Its
+// English descriptions are kept as-is for the English help language.
+func localizeCompletion(root *cobra.Command) {
+	if activeLanguage() != langZH {
+		return
+	}
+	for _, cmd := range root.Commands() {
+		if cmd.Name() != "completion" {
+			continue
+		}
+		cmd.Short = "为指定的 shell 生成自动补全脚本"
+		cmd.Long = "为指定的 shell 生成 maactl 的自动补全脚本。\n每个子命令的帮助中包含生成脚本的使用方法。"
+		for _, child := range cmd.Commands() {
+			child.Short = fmt.Sprintf("为 %s 生成自动补全脚本", child.Name())
+			child.Long = fmt.Sprintf("为 %s 生成 maactl 自动补全脚本。\n", child.Name())
+			if flag := child.Flags().Lookup("no-descriptions"); flag != nil {
+				flag.Usage = "禁用补全描述"
+			}
+		}
+		return
+	}
+}
+
 func newADBCommand(global *cliOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "adb", Short: "Inspect ADB devices",
-		Long: "List ADB devices discovered by MaaToolkit.\n\nUse \"maactl adb devices\" to see addresses and recommended connection methods.",
+		Use: "adb", Short: localized("Inspect ADB devices", "查看 ADB 设备"),
+		Long: localized("List ADB devices discovered by MaaToolkit.\n\nUse \"maactl adb devices\" to see addresses and recommended connection methods.", "列出 MaaToolkit 发现的 ADB 设备。\n\n使用 \"maactl adb devices\" 查看设备地址和建议的连接方式。"),
 		Example: `  maactl adb devices
   maactl adb devices --json`,
 		Args: cobra.NoArgs,
@@ -93,8 +122,8 @@ func newADBCommand(global *cliOptions) *cobra.Command {
 
 func newWin32Command(global *cliOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "win32", Short: "Inspect Win32 desktop windows",
-		Long: "List Win32 desktop windows discovered by MaaToolkit.\n\nUse \"maactl win32 devices\" to see window classes and handles.",
+		Use: "win32", Short: localized("Inspect Win32 desktop windows", "查看 Win32 桌面窗口"),
+		Long: localized("List Win32 desktop windows discovered by MaaToolkit.\n\nUse \"maactl win32 devices\" to see window classes and handles.", "列出 MaaToolkit 发现的 Win32 桌面窗口。\n\n使用 \"maactl win32 devices\" 查看窗口类名和句柄。"),
 		Example: `  maactl win32 devices
   maactl win32 devices --json`,
 		Args: cobra.NoArgs,
@@ -105,12 +134,12 @@ func newWin32Command(global *cliOptions) *cobra.Command {
 }
 
 func newDevicesCommand(global *cliOptions, kind string) *cobra.Command {
-	long := "Windows are discovered through MaaToolkit and include the window name, class, and handle."
+	long := localized("Windows are discovered through MaaToolkit and include the window name, class, and handle.", "窗口由 MaaToolkit 发现，包含窗口名称、类名和句柄。")
 	if kind == "adb" {
-		long = "Devices are discovered through MaaToolkit and include the address, ADB path,\nand recommended screencap and input methods."
+		long = localized("Devices are discovered through MaaToolkit and include the address, ADB path,\nand recommended screencap and input methods.", "设备由 MaaToolkit 发现，包含地址、ADB 路径以及建议的截图和输入方式。")
 	}
 	cmd := &cobra.Command{
-		Use: "devices", Short: fmt.Sprintf("List %s devices", kind), Long: long, Args: cobra.NoArgs,
+		Use: "devices", Short: fmt.Sprintf(localized("List %s devices", "列出 %s 设备"), kind), Long: long, Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			libDir, err := resolveLibDir(global.libDir)
 			if err != nil {

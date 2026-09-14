@@ -280,6 +280,7 @@ Examples:
 - 删除 `adb devices` 重复的 `-j/--json`，统一使用全局旗标；`--version` 去掉 `-v` 短参。
 - `interface` 动作用例归入 `Actions:`；`resource` 的 `-r` 在子命令中显示为 `Inherited Flags (from "maactl resource")`。
 - 测试：更新 `interface_test.go`；新增 `help_test.go`（根概览、共享旗标去重、planned 分区、继承来源、`help` 与 `-h` 一致性、`--version`、旗标在子命令前后解析）。
+- 帮助双语：新增 `lang.go` / `lang_windows.go` / `lang_other.go`；Windows 取用户默认 UI 语言，POSIX 读取 `LC_ALL`/`LC_MESSAGES`/`LANG`，中文显示中文、其余显示英文，可用 `MAACTL_LANG=zh_CN|en` 覆盖；全部命令描述、旗标文案、帮助分区标题与 pflag 的 `(default ...)` 注解均已本地化。
 
 与设计稿的偏差：
 

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -74,7 +75,7 @@ func writeDescription(b *strings.Builder, cmd *cobra.Command) {
 }
 
 func writeUsage(b *strings.Builder, cmd *cobra.Command) {
-	writeHeading(b, "Usage:")
+	writeHeading(b, localized("Usage:", "用法："))
 	if cmd == cmd.Root() {
 		fmt.Fprintf(b, "  %s [command]\n", cmd.CommandPath())
 		return
@@ -104,13 +105,13 @@ func writeCommands(b *strings.Builder, cmd *cobra.Command) {
 		names[i] = commandDisplayName(child)
 		descriptions[i] = child.Short
 		if commandPlanned(child) {
-			descriptions[i] = strings.TrimSpace(descriptions[i] + " (planned)")
+			descriptions[i] = strings.TrimSpace(descriptions[i] + localized(" (planned)", "（计划中）"))
 		}
 		if len(names[i]) > width {
 			width = len(names[i])
 		}
 	}
-	writeHeading(b, "Commands:")
+	writeHeading(b, localized("Commands:", "命令："))
 	for i := range children {
 		fmt.Fprintf(b, "  %-*s   %s\n", width, names[i], descriptions[i])
 	}
@@ -165,9 +166,9 @@ func writeFlags(b *strings.Builder, cmd *cobra.Command) {
 	cmd.NonInheritedFlags().VisitAll(func(f *pflag.Flag) { add(f, true) })
 	cmd.InheritedFlags().VisitAll(func(f *pflag.Flag) { add(f, false) })
 
-	writeFlagGroup(b, "Flags:", ownFlags)
-	writeFlagGroup(b, "Actions:", ownActions)
-	writeFlagGroup(b, "Execution Flags (shared with subcommands):", ownExecution)
+	writeFlagGroup(b, localized("Flags:", "选项："), ownFlags)
+	writeFlagGroup(b, localized("Actions:", "操作："), ownActions)
+	writeFlagGroup(b, localized("Execution Flags (shared with subcommands):", "执行选项（与子命令共用）："), ownExecution)
 	for _, owner := range inheritedOrder {
 		var flags, execution []*pflag.Flag
 		for _, f := range inherited[owner] {
@@ -177,11 +178,11 @@ func writeFlags(b *strings.Builder, cmd *cobra.Command) {
 				flags = append(flags, f)
 			}
 		}
-		writeFlagGroup(b, fmt.Sprintf("Inherited Flags (from %q):", owner.CommandPath()), flags)
-		writeFlagGroup(b, fmt.Sprintf("Execution Flags (inherited from %q):", owner.CommandPath()), execution)
+		writeFlagGroup(b, fmt.Sprintf(localized("Inherited Flags (from %q):", "继承选项（来自 %q）："), owner.CommandPath()), flags)
+		writeFlagGroup(b, fmt.Sprintf(localized("Execution Flags (inherited from %q):", "执行选项（继承自 %q）："), owner.CommandPath()), execution)
 	}
-	writeFlagGroup(b, "Planned Flags:", planned)
-	writeFlagGroup(b, "Global Flags:", append(global, syntheticHelpFlag()))
+	writeFlagGroup(b, localized("Planned Flags:", "计划中的选项："), planned)
+	writeFlagGroup(b, localized("Global Flags:", "全局选项："), append(global, syntheticHelpFlag()))
 }
 
 func isGlobalFlag(cmd, root *cobra.Command, f *pflag.Flag) bool {
@@ -222,8 +223,24 @@ func commandPlanned(cmd *cobra.Command) bool {
 
 func syntheticHelpFlag() *pflag.Flag {
 	flags := pflag.NewFlagSet("help", pflag.ContinueOnError)
-	flags.BoolP("help", "h", false, "show help")
+	flags.BoolP("help", "h", false, localized("show help", "显示帮助"))
 	return flags.Lookup("help")
+}
+
+// defaultSuffixPattern matches pflag's line-ending "(default ...)" annotation.
+var defaultSuffixPattern = regexp.MustCompile(` \(default (.*)\)$`)
+
+// localizeFlagUsages translates pflag's generated default annotations so
+// Chinese help does not mix in English "(default ...)" suffixes.
+func localizeFlagUsages(usages string) string {
+	if activeLanguage() != langZH {
+		return usages
+	}
+	lines := strings.Split(usages, "\n")
+	for i, line := range lines {
+		lines[i] = defaultSuffixPattern.ReplaceAllString(line, "（默认 $1）")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func writeFlagGroup(b *strings.Builder, title string, flags []*pflag.Flag) {
@@ -235,14 +252,14 @@ func writeFlagGroup(b *strings.Builder, title string, flags []*pflag.Flag) {
 		set.AddFlag(f)
 	}
 	writeHeading(b, title)
-	b.WriteString(set.FlagUsages())
+	b.WriteString(localizeFlagUsages(set.FlagUsages()))
 }
 
 func writeExamples(b *strings.Builder, cmd *cobra.Command) {
 	if strings.TrimSpace(cmd.Example) == "" {
 		return
 	}
-	writeHeading(b, "Examples:")
+	writeHeading(b, localized("Examples:", "示例："))
 	for _, line := range strings.Split(cmd.Example, "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			fmt.Fprintf(b, "  %s\n", line)
@@ -259,7 +276,7 @@ func writeFooter(b *strings.Builder, cmd *cobra.Command) {
 		target = cmd.CommandPath() + " <command> --help"
 	}
 	b.WriteString("\n")
-	fmt.Fprintf(b, "Use %q for more information about a command.\n", target)
+	fmt.Fprintf(b, localized("Use %q for more information about a command.\n", "使用 %q 查看某个命令的更多信息。\n"), target)
 }
 
 func writeHeading(b *strings.Builder, title string) {

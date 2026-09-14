@@ -31,12 +31,16 @@ func newRunCommand(global *cliOptions) *cobra.Command {
 	var opt runOptions
 	cmd := &cobra.Command{
 		Use:   "run",
-		Short: "Run PI tasks or Pipeline nodes",
-		Long: `Run a task declared in ProjectInterface, or run a Pipeline node directly.
+		Short: localized("Run PI tasks or Pipeline nodes", "运行 PI task 或 Pipeline 节点"),
+		Long: localized(`Run a task declared in ProjectInterface, or run a Pipeline node directly.
 
 Give exactly one of --task/-t, --node/-n, or a subcommand:
   maactl run -t <task-name>
-  maactl run -n <node-name>`,
+  maactl run -n <node-name>`, `运行 ProjectInterface 中声明的 task，或直接运行 Pipeline 节点。
+
+--task/-t、--node/-n 和子命令三者只能选其一：
+  maactl run -t <task-name>
+  maactl run -n <node-name>`),
 		Example: `  maactl run -t "自动挂机卖蛋" -f D:\MaaMio --stop-after 10s
   maactl run node "签到-开始签到" --adb-address 127.0.0.1:16384 --events all`,
 		Args: cobra.NoArgs,
@@ -53,11 +57,11 @@ Give exactly one of --task/-t, --node/-n, or a subcommand:
 			return c.Help()
 		},
 	}
-	cmd.Flags().StringVarP(&taskName, "task", "t", "", `shortcut for "maactl run task <task-name>"`)
-	cmd.Flags().StringVarP(&nodeName, "node", "n", "", `shortcut for "maactl run node <node-name>"`)
+	cmd.Flags().StringVarP(&taskName, "task", "t", "", localized(`shortcut for "maactl run task <task-name>"`, `等价于 "maactl run task <task-name>"`))
+	cmd.Flags().StringVarP(&nodeName, "node", "n", "", localized(`shortcut for "maactl run node <node-name>"`, `等价于 "maactl run node <node-name>"`))
 	// Shared execution flags live on run only and are inherited by its subcommands.
 	addRunFlags(cmd.PersistentFlags(), &opt)
-	cmd.AddCommand(newRunTaskCommand(global, &opt), newRunNodeCommand(global, &opt), plannedRunCommand("preset", "Run the enabled tasks in a PI preset"))
+	cmd.AddCommand(newRunTaskCommand(global, &opt), newRunNodeCommand(global, &opt), plannedRunCommand("preset", localized("Run the enabled tasks in a PI preset", "运行 PI preset 中启用的任务")))
 	return cmd
 }
 
@@ -65,10 +69,11 @@ func newResourceCommand(global *cliOptions) *cobra.Command {
 	var resourceName string
 	var inspect, nodes bool
 	cmd := &cobra.Command{
-		Use: "resource", Short: "Load and inspect PI resources",
-		Long: `resource inspect shows loaded metadata; resource nodes lists Pipeline nodes
+		Use: "resource", Short: localized("Load and inspect PI resources", "加载并检查 PI 资源"),
+		Long: localized(`resource inspect shows loaded metadata; resource nodes lists Pipeline nodes
 available in the loaded resource. The shortcut flags -i and -n are equivalent
-to the two subcommands.`,
+to the two subcommands.`, `resource inspect 显示已加载资源的元数据；resource nodes 列出资源中
+可用的 Pipeline 节点。快捷选项 -i 和 -n 分别等价于这两个子命令。`),
 		Example: `  maactl resource inspect -f D:\MaaMio
   maactl resource nodes -r base -f D:\MaaMio --json`,
 		Args: cobra.NoArgs,
@@ -115,23 +120,23 @@ to the two subcommands.`,
 			return inspectResource(global, pi, res, nodes)
 		}})
 	}
-	add("inspect", nil, "Show loaded resource metadata", "Load the selected resource and show its paths, hash, and node count.", false)
-	add("nodes", nil, "List loaded Pipeline nodes", "Load the selected resource and list all Pipeline nodes it provides.", true)
-	cmd.AddCommand(plannedResourceCommand("hash", "Print or verify the loaded resource hash"))
-	cmd.PersistentFlags().StringVarP(&resourceName, "resource", "r", "", "PI resource name (default: first resource)")
-	cmd.Flags().BoolVarP(&inspect, "inspect", "i", false, `shortcut for "maactl resource inspect"`)
-	cmd.Flags().BoolVarP(&nodes, "nodes", "n", false, `shortcut for "maactl resource nodes"`)
+	add("inspect", nil, localized("Show loaded resource metadata", "显示已加载资源的元数据"), localized("Load the selected resource and show its paths, hash, and node count.", "加载所选资源并显示其路径、hash 和节点数量。"), false)
+	add("nodes", nil, localized("List loaded Pipeline nodes", "列出已加载的 Pipeline 节点"), localized("Load the selected resource and list all Pipeline nodes it provides.", "加载所选资源并列出其中所有 Pipeline 节点。"), true)
+	cmd.AddCommand(plannedResourceCommand("hash", localized("Print or verify the loaded resource hash", "打印或校验已加载资源的 hash")))
+	cmd.PersistentFlags().StringVarP(&resourceName, "resource", "r", "", localized("PI resource name (default: first resource)", "PI 资源名称（默认：第一个资源）"))
+	cmd.Flags().BoolVarP(&inspect, "inspect", "i", false, localized(`shortcut for "maactl resource inspect"`, `等价于 "maactl resource inspect"`))
+	cmd.Flags().BoolVarP(&nodes, "nodes", "n", false, localized(`shortcut for "maactl resource nodes"`, `等价于 "maactl resource nodes"`))
 	return cmd
 }
 
 func plannedRunCommand(use, short string) *cobra.Command {
-	cmd := &cobra.Command{Use: use + " <name>", Short: short, Long: "This command is part of the published CLI contract but is not implemented yet. It returns an error when invoked.", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, _ []string) error { return fmt.Errorf("run %s is not implemented yet", use) }}
+	cmd := &cobra.Command{Use: use + " <name>", Short: short, Long: localized("This command is part of the published CLI contract but is not implemented yet. It returns an error when invoked.", "该命令属于已公布的 CLI 契约，但尚未实现，调用时会返回错误。"), Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, _ []string) error { return fmt.Errorf("run %s is not implemented yet", use) }}
 	markCommandPlanned(cmd)
 	return cmd
 }
 
 func plannedResourceCommand(use, short string) *cobra.Command {
-	cmd := &cobra.Command{Use: use, Short: short, Long: "This command is part of the published CLI contract but is not implemented yet. It returns an error when invoked.", Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error { return fmt.Errorf("resource %s is not implemented yet", use) }}
+	cmd := &cobra.Command{Use: use, Short: short, Long: localized("This command is part of the published CLI contract but is not implemented yet. It returns an error when invoked.", "该命令属于已公布的 CLI 契约，但尚未实现，调用时会返回错误。"), Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error { return fmt.Errorf("resource %s is not implemented yet", use) }}
 	markCommandPlanned(cmd)
 	return cmd
 }
@@ -182,19 +187,19 @@ func inspectResource(global *cliOptions, pi *loadedPI, spec *resource, listNodes
 }
 
 func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
-	flags.StringVarP(&opt.resource, "resource", "r", "", "PI resource name (default: first compatible resource)")
-	flags.StringVarP(&opt.controller, "controller", "c", "", "PI controller name (default: only controller)")
-	flags.StringVarP(&opt.adbAddress, "adb-address", "a", "", "ADB device serial/address (default: only detected device)")
-	flags.StringVarP(&opt.override, "override", "o", "", "final Pipeline override JSON")
-	flags.StringVarP(&opt.overrideFile, "override-file", "O", "", "file containing the final Pipeline override JSON")
-	flags.StringArrayVarP(&opt.optionValues, "option", "p", nil, "option value as name=<JSON>; repeatable")
-	flags.StringArrayVar(&opt.overlay, "overlay", nil, "additional resource root loaded after the selected resource; repeatable")
-	flags.String("option-file", "", "JSON file of option values")
-	flags.Bool("dry-run", false, "resolve and display execution without connecting a controller")
-	flags.Bool("explain", false, "display resource and Pipeline override layers")
-	flags.StringVar(&opt.events, "events", "focus", "event output: focus (PI text), all (all sink events), or off")
-	flags.DurationVar(&opt.stopAfter, "stop-after", 0, "stop a running task after this duration; for bounded runs and tests")
-	flags.BoolVar(&opt.noAgent, "no-agent", false, "do not start the ProjectInterface agent")
+	flags.StringVarP(&opt.resource, "resource", "r", "", localized("PI resource name (default: first compatible resource)", "PI 资源名称（默认：第一个兼容资源）"))
+	flags.StringVarP(&opt.controller, "controller", "c", "", localized("PI controller name (default: only controller)", "PI 控制器名称（默认：唯一的控制器）"))
+	flags.StringVarP(&opt.adbAddress, "adb-address", "a", "", localized("ADB device serial/address (default: only detected device)", "ADB 设备序列号/地址（默认：唯一检测到的设备）"))
+	flags.StringVarP(&opt.override, "override", "o", "", localized("final Pipeline override JSON", "最终 Pipeline override JSON"))
+	flags.StringVarP(&opt.overrideFile, "override-file", "O", "", localized("file containing the final Pipeline override JSON", "包含最终 Pipeline override JSON 的文件"))
+	flags.StringArrayVarP(&opt.optionValues, "option", "p", nil, localized("option value as name=<JSON>; repeatable", "option 值，格式 name=<JSON>；可重复"))
+	flags.StringArrayVar(&opt.overlay, "overlay", nil, localized("additional resource root loaded after the selected resource; repeatable", "在所选资源之后加载的额外资源根目录；可重复"))
+	flags.String("option-file", "", localized("JSON file of option values", "包含 option 值的 JSON 文件"))
+	flags.Bool("dry-run", false, localized("resolve and display execution without connecting a controller", "仅解析并显示执行内容，不连接控制器"))
+	flags.Bool("explain", false, localized("display resource and Pipeline override layers", "显示资源与 Pipeline override 各层内容"))
+	flags.StringVar(&opt.events, "events", "focus", localized("event output: focus (PI text), all (all sink events), or off", "事件输出：focus（仅 PI 文本）、all（全部 sink 事件）或 off"))
+	flags.DurationVar(&opt.stopAfter, "stop-after", 0, localized("stop a running task after this duration; for bounded runs and tests", "运行指定时长后停止任务；用于限时运行和测试"))
+	flags.BoolVar(&opt.noAgent, "no-agent", false, localized("do not start the ProjectInterface agent", "不启动 ProjectInterface agent"))
 	flags.VisitAll(func(f *pflag.Flag) {
 		_ = flags.SetAnnotation(f.Name, sectionAnnotation, []string{sectionExecution})
 	})
@@ -204,9 +209,10 @@ func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
 func newRunTaskCommand(global *cliOptions, opt *runOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "task <task-name>",
-		Short: "Run a task declared in ProjectInterface",
-		Long: `Looks up the task by name, resolves its entry node and Pipeline overrides,
-then executes it on the selected controller.`,
+		Short: localized("Run a task declared in ProjectInterface", "运行 ProjectInterface 中声明的 task"),
+		Long: localized(`Looks up the task by name, resolves its entry node and Pipeline overrides,
+then executes it on the selected controller.`, `按名称查找 task，解析其入口节点和 Pipeline override，
+然后在所选控制器上执行。`),
 		Example: `  maactl run task "自动挂机卖蛋" -f D:\MaaMio --stop-after 10s`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -218,9 +224,10 @@ then executes it on the selected controller.`,
 func newRunNodeCommand(global *cliOptions, opt *runOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "node <node-name>",
-		Short: "Run a Pipeline node from a PI resource",
-		Long: `The node name is used directly as the task entry; the node is executed with
-the selected resource and Pipeline overrides.`,
+		Short: localized("Run a Pipeline node from a PI resource", "运行 PI 资源中的 Pipeline 节点"),
+		Long: localized(`The node name is used directly as the task entry; the node is executed with
+the selected resource and Pipeline overrides.`, `节点名称直接作为任务入口，
+使用所选的资源和 Pipeline override 执行。`),
 		Example: `  maactl run node "签到-开始签到" --adb-address 127.0.0.1:16384 --events all`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
