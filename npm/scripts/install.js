@@ -5,7 +5,8 @@
 //
 // The published tarball already carries vendor/maactl.exe, so this only runs
 // for installs without the bundled executable (git checkouts, `npm pack` from
-// source, custom MAACTL_ASSET builds). A download failure must never break
+// source, custom MAACTL_ASSET builds). The executable is unpacked out of the
+// release archive of this platform. A download failure must never break
 // `npm install`: the shim retries lazily on first use. Set
 // MAACTL_STRICT_INSTALL=1 to turn the warning into an error.
 

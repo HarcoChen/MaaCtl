@@ -7,7 +7,7 @@ const path = require('node:path');
 
 const { download, downloadWithRetry, formatBytes } = require('../lib/download');
 const shared = require('../lib/binary');
-const { tempDir, withEnvAsync, isolatedPackage, withServer } = require('../test-support/helpers');
+const { tempDir, withEnvAsync, isolatedPackage, withServer, zipBuffer } = require('../test-support/helpers');
 
 test('download writes the body and removes the .part file', async () => {
   const dest = path.join(tempDir(), 'maactl.exe');
@@ -122,22 +122,29 @@ function fakeExe() {
   return Buffer.concat([Buffer.from('MZ'), Buffer.alloc(shared.MIN_BINARY_BYTES, 0x41)]);
 }
 
-test('ensureBinary downloads, verifies and then reuses the cache', async () => {
+/** The release archive the wrapper downloads: one platform, two executables. */
+function fakeArchive(exe = fakeExe()) {
+  return zipBuffer({ 'maactl.exe': exe, 'maactl-lite.exe': Buffer.from('lite') });
+}
+
+test('ensureBinary downloads the release archive, unpacks and then reuses the cache', async () => {
   const payload = fakeExe();
+  const archive = fakeArchive(payload);
   let hits = 0;
   // A fresh copy of the wrapper: no vendor/maactl.exe can short-circuit the
   // download path in a developer's working copy.
   const { binary } = isolatedPackage();
+  const route = `/${binary.assetName()}`;
 
   await withEnvAsync({ MAACTL_HOME: tempDir() }, () => withServer(
     {
-      '/maactl.exe': (request, response) => {
+      [route]: (request, response) => {
         hits += 1;
-        response.writeHead(200, { 'content-length': payload.length }).end(payload);
+        response.writeHead(200, { 'content-length': archive.length }).end(archive);
       },
     },
     async (base) => {
-      process.env.MAACTL_BINARY_URL = `${base}/maactl.exe`;
+      process.env.MAACTL_BINARY_URL = `${base}${route}`;
       const lines = [];
       const verified = [];
       const downloaded = await binary.ensureBinary({
@@ -149,6 +156,7 @@ test('ensureBinary downloads, verifies and then reuses the cache', async () => {
       assert.equal(fs.statSync(downloaded).size, payload.length);
       assert.deepEqual(verified, [downloaded]);
       assert.equal(lines.length, 2, 'download start and completion are reported');
+      assert.equal(fs.existsSync(binary.archivePath(downloaded)), false, 'the archive is not kept around');
 
       const again = await binary.ensureBinary({ verify: () => assert.fail('must not re-download') });
       assert.equal(again, downloaded);
@@ -158,15 +166,38 @@ test('ensureBinary downloads, verifies and then reuses the cache', async () => {
   assert.equal(hits, 1);
 });
 
-test('ensureBinary discards a downloaded binary that fails verification', async () => {
+test('ensureBinary rejects an archive without maactl.exe', async () => {
   const { binary } = isolatedPackage();
+  const archive = zipBuffer({ 'maactl-lite.exe': Buffer.from('lite') });
+  const route = `/${binary.assetName()}`;
 
   await withEnvAsync({ MAACTL_HOME: tempDir() }, () => withServer(
     {
-      '/broken.exe': (request, response) => response.writeHead(200).end('MZ broken'),
+      [route]: (request, response) => {
+        response.writeHead(200, { 'content-length': archive.length }).end(archive);
+      },
     },
     async (base) => {
-      process.env.MAACTL_BINARY_URL = `${base}/broken.exe`;
+      process.env.MAACTL_BINARY_URL = `${base}${route}`;
+      await assert.rejects(binary.ensureBinary({ quiet: true }), /holds no maactl\.exe/);
+      assert.equal(fs.existsSync(binary.archivePath()), false, 'a failed unpack must not leave the archive');
+    },
+  ));
+});
+
+test('ensureBinary discards a downloaded binary that fails verification', async () => {
+  const { binary } = isolatedPackage();
+  const archive = fakeArchive();
+  const route = `/${binary.assetName()}`;
+
+  await withEnvAsync({ MAACTL_HOME: tempDir() }, () => withServer(
+    {
+      [route]: (request, response) => {
+        response.writeHead(200, { 'content-length': archive.length }).end(archive);
+      },
+    },
+    async (base) => {
+      process.env.MAACTL_BINARY_URL = `${base}${route}`;
       await assert.rejects(
         binary.ensureBinary({ quiet: true, verify: () => { throw new Error('checksum mismatch'); } }),
         /checksum mismatch/,

@@ -19,9 +19,14 @@ npx maactl -- run -t "签到" -if D:\01_Projects\github\MaaMio -sa 30s
 
 ## 平台
 
-只提供 Windows amd64 的 `maactl.exe`（自带 MaaFramework 运行库）。包内声明了
+npm 包只提供 Windows amd64 的 `maactl.exe`（自带 MaaFramework 运行库）。包内声明了
 `"os": ["win32"]`，在其他系统上 npm 会以 `EBADPLATFORM` 拒绝安装；同时声明了
-`"engines": { "node": ">=22" }`，因为包装器只用 Node 22 及以上提供的内置能力。
+`"engines": { "node": ">=22" }`，因为包装器只用 Node 22 及以上提供的内置能力
+（包括从 release 压缩包中解出 exe 所需的 `zlib.crc32`）。
+
+其他平台请直接从 [Releases](https://github.com/TanyaShue/MaaCtl/releases/latest)
+下载对应的 `maactl-<version>-<platform>.zip`，里面同时包含自带运行库的 `maactl`
+与轻量版 `maactl-lite`。
 
 ## maactl.exe 的来源
 
@@ -30,7 +35,8 @@ npx maactl -- run -t "签到" -if D:\01_Projects\github\MaaMio -sa 30s
 1. 环境变量 `MAACTL_BINARY` 指向的文件；
 2. 包内的 `vendor/maactl.exe`（正式发布的 tarball 会携带）；
 3. 缓存 `%LOCALAPPDATA%\maactl\npm\<version>\maactl.exe`；
-4. 都找不到时，从对应版本的 GitHub Release 下载并校验后缓存（下次直接复用）。
+4. 都找不到时，下载该版本的 `maactl-<version>-win-x86_64.zip`，从压缩包里解出
+   `maactl.exe`，校验后缓存（下次直接复用）。
 
 ## 环境变量
 
@@ -40,8 +46,9 @@ npx maactl -- run -t "签到" -if D:\01_Projects\github\MaaMio -sa 30s
 | `MAACTL_HOME` | 覆盖缓存根目录，默认 `%LOCALAPPDATA%\maactl`。 |
 | `MAACTL_VERSION` | 覆盖下载时使用的版本，默认取包的 `version`。 |
 | `MAACTL_BINARY_URL` | 直接指定下载地址，完全跳过 GitHub 拼接。 |
-| `MAACTL_MIRROR` | 镜像前缀，最终地址为 `<mirror>/https://github.com/<repo>/releases/download/<tag>/maactl.exe`。 |
-| `MAACTL_REPO` / `MAACTL_ASSET` | 覆盖仓库（默认 `TanyaShue/MaaCtl`）与资产名（默认 `maactl.exe`）。 |
+| `MAACTL_MIRROR` | 镜像前缀，最终地址为 `<mirror>/https://github.com/<repo>/releases/download/<tag>/<asset>`。 |
+| `MAACTL_REPO` | 覆盖仓库，默认 `TanyaShue/MaaCtl`。 |
+| `MAACTL_PLATFORM` / `MAACTL_ASSET` | 覆盖产物平台（默认 `win-x86_64`）与资产名（默认 `maactl-<version>-<platform>.zip`）。 |
 | `MAACTL_SKIP_DOWNLOAD=1` | 安装阶段不预下载，改为首次运行时下载。 |
 | `MAACTL_STRICT_INSTALL=1` | 预下载失败时让 `npm install` 直接失败。 |
 | `MAACTL_QUIET=1` | 静默模式，不输出下载进度。 |

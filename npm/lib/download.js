@@ -1,6 +1,6 @@
 'use strict';
 
-// Minimal HTTPS downloader for the maactl.exe release asset.
+// Minimal HTTPS downloader for the maactl release archive.
 //
 // Node built-ins only: the npm package ships no runtime dependencies. GitHub
 // release downloads answer with a 302 to objects.githubusercontent.com, so

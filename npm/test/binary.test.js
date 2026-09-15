@@ -9,30 +9,47 @@ const path = require('node:path');
 const binary = require('../lib/binary');
 const { tempDir, withEnv, isolatedPackage } = require('../test-support/helpers');
 
-test('binaryUrl builds the GitHub release URL for the package version', () => {
+test('binaryUrl builds the GitHub release URL of the platform archive', () => {
   withEnv({}, () => {
     assert.equal(
       binary.binaryUrl(),
-      `https://github.com/TanyaShue/MaaCtl/releases/download/v${binary.version()}/maactl.exe`,
+      `https://github.com/TanyaShue/MaaCtl/releases/download/v${binary.version()}/maactl-${binary.version()}-win-x86_64.zip`,
     );
   });
 });
 
+test('assetName follows the package version and the platform', () => {
+  withEnv({}, () => {
+    assert.equal(binary.platform(), 'win-x86_64');
+    assert.equal(binary.assetName(), `maactl-${binary.version()}-win-x86_64.zip`);
+  });
+  withEnv({ MAACTL_VERSION: 'v9.9.9', MAACTL_PLATFORM: 'win-aarch64' }, () => {
+    assert.equal(binary.assetName(), 'maactl-9.9.9-win-aarch64.zip');
+  });
+});
+
 test('binaryUrl honours version, repo, asset and mirror overrides', () => {
-  withEnv({ MAACTL_VERSION: '1.2.3-beta.1', MAACTL_REPO: 'someone/fork', MAACTL_ASSET: 'maactl-lite.exe' }, () => {
+  withEnv({ MAACTL_VERSION: '1.2.3-beta.1', MAACTL_REPO: 'someone/fork', MAACTL_ASSET: 'maactl-1.2.3-win-x86_64.zip' }, () => {
     assert.equal(
       binary.binaryUrl(),
-      'https://github.com/someone/fork/releases/download/v1.2.3-beta.1/maactl-lite.exe',
+      'https://github.com/someone/fork/releases/download/v1.2.3-beta.1/maactl-1.2.3-win-x86_64.zip',
     );
   });
   withEnv({ MAACTL_VERSION: 'v9.9.9', MAACTL_MIRROR: 'https://ghproxy.example/' }, () => {
     assert.equal(
       binary.binaryUrl(),
-      'https://ghproxy.example/https://github.com/TanyaShue/MaaCtl/releases/download/v9.9.9/maactl.exe',
+      'https://ghproxy.example/https://github.com/TanyaShue/MaaCtl/releases/download/v9.9.9/maactl-9.9.9-win-x86_64.zip',
     );
   });
-  withEnv({ MAACTL_BINARY_URL: 'https://example.test/custom.exe', MAACTL_MIRROR: 'https://mirror.test' }, () => {
-    assert.equal(binary.binaryUrl(), 'https://example.test/custom.exe');
+  withEnv({ MAACTL_BINARY_URL: 'https://example.test/custom.zip', MAACTL_MIRROR: 'https://mirror.test' }, () => {
+    assert.equal(binary.binaryUrl(), 'https://example.test/custom.zip');
+  });
+});
+
+test('archivePath keeps the downloaded archive next to the cached executable', () => {
+  withEnv({}, () => {
+    const dir = path.join(os.tmpdir(), 'maactl-cache', 'npm', '1.2.3');
+    assert.equal(binary.archivePath(path.join(dir, 'maactl.exe')), path.join(dir, binary.assetName()));
   });
 });
 
