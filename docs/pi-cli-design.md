@@ -449,6 +449,10 @@ run (r): 运行 task、preset 或节点
 - Linux（wlroots）下 `use_win32_vk_code` 的热键键码映射未实现（当前会在运行期失败）；
 - `-e all` 看不到 `Resource.Loading` 与连接期 `Controller.Action` 事件（sink 注册时机晚于资源加载与连接）；
 - 未知 option 字段（例如 `--option X.tokne=y` 这类拼写错误）被静默忽略，未报错；
+- `pi options --all` 的 `reason` 在 controller 与 resource 同时不适用时只报前一条
+  （`controller must be one of …`），而 `run --explain` 的 `Skipped.Reason` 会两条都报。
+  两者对齐会改变 `pi options` 的对外文案，属待决策（`internal/pi/plan.go` 的 `planOption`
+  与 `internal/pi/option.go` 的 `applicabilityReason` 是这两处实现）；
 - npm 下载产物无哈希或签名锚点（需 release 侧先产出 SHA-256 清单）；`MAACTL_MIRROR` 允许明文 `http`。
 
 ## 12. 与旧版对照（迁移）
