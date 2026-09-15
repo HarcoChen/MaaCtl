@@ -11,7 +11,7 @@ import (
 // TestValidateSampleInterface checks that the protocol's reference file passes
 // validation when filesystem checks are skipped.
 func TestValidateSampleInterface(t *testing.T) {
-	project, err := pi.Load(filepath.Join("..", "maafw", "sample", "interface.json"))
+	project, err := pi.Load(sampleInterface(t))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -218,7 +218,7 @@ func TestResolveLabelsStripsDollarWithoutLanguages(t *testing.T) {
 // TestLoadMaaFrameworkSampleInterface makes sure the protocol's reference file
 // (JSONC comments, every top-level field) parses into the full model.
 func TestLoadMaaFrameworkSampleInterface(t *testing.T) {
-	project, err := pi.Load(filepath.Join("..", "maafw", "sample", "interface.json"))
+	project, err := pi.Load(sampleInterface(t))
 	if err != nil {
 		t.Fatalf("load sample: %v", err)
 	}

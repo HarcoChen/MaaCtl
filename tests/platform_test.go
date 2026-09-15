@@ -60,8 +60,12 @@ func TestPlatformHostMatchesTheBuild(t *testing.T) {
 	if host.GoOS() != runtime.GOOS || host.GoARCH() != runtime.GOARCH {
 		t.Fatalf("Host() = %s, want %s/%s", host.ID(), runtime.GOOS, runtime.GOARCH)
 	}
+	// Host() reports the build's GOOS/GOARCH even on a platform MaaFramework
+	// does not ship for (linux/386, freebsd, ...). The mapping check above still
+	// applies there; only the archiving assertion below needs a supported
+	// platform, so an unsupported host skips instead of failing.
 	if !host.Known() {
-		t.Fatalf("Host() = %s is not a supported platform", host.ID())
+		t.Skipf("%s/%s is not a MaaFramework platform", runtime.GOOS, runtime.GOARCH)
 	}
 	if got, want := host.Archive("maactl", "0.1.0"), "maactl-0.1.0-"+host.ID()+".zip"; got != want {
 		t.Errorf("Archive = %q, want %q", got, want)

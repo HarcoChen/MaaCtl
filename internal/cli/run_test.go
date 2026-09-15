@@ -165,3 +165,63 @@ func TestExitCodesAreStable(t *testing.T) {
 		t.Fatal("nil errors must stay nil")
 	}
 }
+
+// writeProject writes body to a fresh interface.json and loads it.
+func writeProject(t *testing.T, body string) *pi.Loaded {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "interface.json")
+	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	project, err := pi.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return project
+}
+
+// TestControllerFailureIsExitController pins exit code 4: an unsupported
+// controller type is refused by createController before MaaFramework is touched,
+// so this runs without a runtime.
+func TestControllerFailureIsExitController(t *testing.T) {
+	kind := unsupportedControllerType()
+	if kind == "" {
+		t.Fatalf("no unsupported controller type on %s", pi.PlatformName())
+	}
+	prepared := &preparedRun{
+		global:     &GlobalOptions{},
+		project:    fixtureProject(t),
+		config:     &clientconfig.Config{},
+		controller: &pi.Controller{Name: "other", Type: kind},
+	}
+	_, err := prepared.createController()
+	var exit *ExitError
+	if !errors.As(err, &exit) || exit.Code != ExitController {
+		t.Fatalf("err = %v, want exit code %d", err, ExitController)
+	}
+}
+
+// TestPretaskFailureIsExitPretask pins exit code 5: a pretask whose executable
+// cannot be started stops the run before the controller is created, so this
+// runs offline.
+func TestPretaskFailureIsExitPretask(t *testing.T) {
+	project := writeProject(t, `{
+		"interface_version": 2,
+		"controller": [{"name": "Android", "type": "Adb"}],
+		"resource": [{"name": "base", "path": ["resource"]}],
+		"pretask": [{"exec": "maactl-definitely-missing-binary"}]
+	}`)
+	prepared := &preparedRun{
+		global:     &GlobalOptions{},
+		project:    project,
+		config:     &clientconfig.Config{},
+		controller: &project.Controller[0],
+		resource:   &project.Resource[0],
+		resolution: &pi.Resolution{},
+	}
+	err := prepared.runPretasks()
+	var exit *ExitError
+	if !errors.As(err, &exit) || exit.Code != ExitPretask {
+		t.Fatalf("err = %v, want exit code %d", err, ExitPretask)
+	}
+}

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,12 +13,9 @@ import (
 	"maactl/internal/table"
 )
 
-// piFixture writes a small but complete ProjectInterface for CLI tests.
-func piFixture(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "interface.json")
-	data := `{
+// piFixtureBody is a small but complete ProjectInterface shared by the CLI
+// tests.
+const piFixtureBody = `{
 		"interface_version": 2,
 		"name": "demo",
 		"label": "示例",
@@ -50,10 +46,11 @@ func piFixture(t *testing.T) string {
 		},
 		"preset": [{"name": "日常", "task": [{"name": "打开游戏"}]}]
 	}`
-	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
-		t.Fatal(err)
-	}
-	return path
+
+// piFixture writes a small but complete ProjectInterface for CLI tests.
+func piFixture(t *testing.T) string {
+	t.Helper()
+	return writeProject(t, piFixtureBody)
 }
 
 // TestPISubcommandsRun pins the command surface replacing the old
@@ -267,6 +264,134 @@ func TestPIOptionsJSON(t *testing.T) {
 	}
 }
 
+// TestPIQueryCommandsJSON pins the machine-readable shape of every read-only
+// query command. Only `options` and `validate` were covered before, so a
+// changed field name in any of these would slip through silently.
+func TestPIQueryCommandsJSON(t *testing.T) {
+	path := piFixture(t)
+
+	decode := func(t *testing.T, args ...string) string {
+		t.Helper()
+		out, err := runCLI(args...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, out)
+		}
+		return out
+	}
+
+	t.Run("info", func(t *testing.T) {
+		var info struct {
+			Name             string   `json:"name"`
+			Label            string   `json:"label"`
+			InterfaceVersion int      `json:"interface_version"`
+			ProtocolVersion  string   `json:"protocol_version"`
+			Controllers      int      `json:"controllers"`
+			Resources        int      `json:"resources"`
+			Tasks            int      `json:"tasks"`
+			Groups           int      `json:"groups"`
+			Options          int      `json:"options"`
+			Presets          int      `json:"presets"`
+			Settings         int      `json:"settings"`
+			RunnableTypes    []string `json:"runnable_controller_types"`
+			Telemetry        bool     `json:"telemetry"`
+		}
+		if err := json.Unmarshal([]byte(decode(t, "pi", "info", "-f", path, "-j")), &info); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if info.Name != "demo" || info.Label != "示例" || info.InterfaceVersion != 2 || info.ProtocolVersion != pi.ProtocolVersion {
+			t.Errorf("info header = %+v", info)
+		}
+		if info.Controllers != 2 || info.Resources != 2 || info.Tasks != 2 || info.Groups != 1 || info.Options != 2 || info.Presets != 1 || info.Settings != 1 {
+			t.Errorf("info counts = %+v", info)
+		}
+		if len(info.RunnableTypes) == 0 || info.Telemetry {
+			t.Errorf("info runtime fields = %+v", info)
+		}
+	})
+
+	t.Run("controllers", func(t *testing.T) {
+		var rows []struct {
+			Name      string `json:"name"`
+			Label     string `json:"label"`
+			Type      string `json:"type"`
+			Runnable  bool   `json:"runnable"`
+			Options   int    `json:"options"`
+			Resources int    `json:"resources"`
+		}
+		if err := json.Unmarshal([]byte(decode(t, "pi", "controllers", "-f", path, "-j")), &rows); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if len(rows) != 2 || rows[0].Name != "Android" || rows[0].Label != "安卓" || rows[0].Type != "Adb" || rows[0].Options != 1 {
+			t.Errorf("controller rows = %+v", rows)
+		}
+	})
+
+	t.Run("tasks", func(t *testing.T) {
+		var rows []struct {
+			Name       string   `json:"name"`
+			Label      string   `json:"label"`
+			Entry      string   `json:"entry"`
+			Group      []string `json:"group"`
+			Options    int      `json:"options"`
+			Compatible bool     `json:"compatible"`
+		}
+		if err := json.Unmarshal([]byte(decode(t, "pi", "tasks", "-f", path, "-j")), &rows); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if len(rows) != 2 || rows[0].Name != "打开游戏" || rows[0].Entry != "启动游戏" || len(rows[0].Group) != 1 || rows[0].Group[0] != "daily" || !rows[0].Compatible {
+			t.Errorf("task rows = %+v", rows)
+		}
+	})
+
+	t.Run("groups", func(t *testing.T) {
+		var rows []struct {
+			Name          string `json:"name"`
+			Label         string `json:"label"`
+			DefaultExpand bool   `json:"default_expand"`
+			Tasks         int    `json:"tasks"`
+		}
+		if err := json.Unmarshal([]byte(decode(t, "pi", "groups", "-f", path, "-j")), &rows); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		// A task with no group counts towards every group, since an empty
+		// allow-list means "no restriction": daily holds 打开游戏 and PC任务.
+		if len(rows) != 1 || rows[0].Name != "daily" || rows[0].Label != "日常" || rows[0].Tasks != 2 {
+			t.Errorf("group rows = %+v", rows)
+		}
+	})
+
+	t.Run("presets", func(t *testing.T) {
+		var rows []struct {
+			Name  string `json:"name"`
+			Label string `json:"label"`
+			Task  []struct {
+				Name string `json:"name"`
+			} `json:"task"`
+		}
+		if err := json.Unmarshal([]byte(decode(t, "pi", "presets", "-f", path, "-j")), &rows); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if len(rows) != 1 || rows[0].Name != "日常" || len(rows[0].Task) != 1 || rows[0].Task[0].Name != "打开游戏" {
+			t.Errorf("preset rows = %+v", rows)
+		}
+	})
+
+	t.Run("settings", func(t *testing.T) {
+		var rows []struct {
+			Name          string   `json:"name"`
+			Label         string   `json:"label"`
+			DefaultExpand bool     `json:"default_expand"`
+			Option        []string `json:"option"`
+		}
+		if err := json.Unmarshal([]byte(decode(t, "pi", "settings", "-f", path, "-j")), &rows); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if len(rows) != 1 || rows[0].Name != "global" || len(rows[0].Option) != 1 || rows[0].Option[0] != "模式" {
+			t.Errorf("setting rows = %+v", rows)
+		}
+	})
+}
+
 // TestPIValidateReportsIssues checks validation output and the failure exit code.
 func TestPIValidateReportsIssues(t *testing.T) {
 	path := piFixture(t)
@@ -414,10 +539,16 @@ func TestFlagAliasesEndToEnd(t *testing.T) {
 	}
 }
 
-// TestLegacyDeviceCommandWarns checks the deprecated alias still works.
+// TestLegacyDeviceCommandWarns checks the deprecated `adb devices` alias stays
+// hidden from parent help but still warns on stderr before it does anything.
+// The warning is printed before MaaFramework is touched, so this runs offline.
 func TestLegacyDeviceCommandWarns(t *testing.T) {
 	hidden := mustHelp(t, "adb", "-h")
 	if strings.Contains(hidden, "adb devices") {
 		t.Errorf("legacy command should be hidden from parent help:\n%s", hidden)
+	}
+	out, _ := runCLI("adb", "devices")
+	if !strings.Contains(out, "deprecated") || !strings.Contains(out, "maactl device adb") {
+		t.Errorf("legacy `adb devices` should warn on stderr:\n%s", out)
 	}
 }

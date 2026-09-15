@@ -2,7 +2,6 @@ package tests
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,10 +9,11 @@ import (
 )
 
 // sampleProject loads the MaaFramework reference interface.json, which exercises
-// every option kind and the preset format.
+// every option kind and the preset format. It skips when maafw/ is not checked
+// out, since that directory is gitignored.
 func sampleProject(t *testing.T) *pi.Loaded {
 	t.Helper()
-	project, err := pi.Load(filepath.Join("..", "maafw", "sample", "interface.json"))
+	project, err := pi.Load(sampleInterface(t))
 	if err != nil {
 		t.Fatalf("load sample: %v", err)
 	}
@@ -473,13 +473,7 @@ func TestOverrideMergesTopLevelFields(t *testing.T) {
 // `t` task resolved.
 func loadFixture(t *testing.T, body string) (*pi.Loaded, *pi.Task) {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "interface.json")
-	writeFile(t, path, body)
-	project, err := pi.Load(path)
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
+	_, project := loadProject(t, body)
 	task := project.LookupTask("t")
 	if task == nil {
 		t.Fatalf("fixture has no task named t")

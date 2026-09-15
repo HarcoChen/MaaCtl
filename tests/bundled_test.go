@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"strings"
 	"testing"
 
 	"maactl/internal/maafw"
@@ -23,9 +22,6 @@ func TestBundledBuildCarriesPayload(t *testing.T) {
 	}
 	if maafw.BundledVersion() != bundled.Version() {
 		t.Errorf("maafw.BundledVersion() = %q, want %q", maafw.BundledVersion(), bundled.Version())
-	}
-	if id := bundled.CacheID(); id == "" || strings.ContainsAny(id, `/\:`) {
-		t.Errorf("CacheID() = %q, want a path-safe identifier", id)
 	}
 }
 

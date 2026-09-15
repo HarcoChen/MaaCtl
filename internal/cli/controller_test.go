@@ -165,7 +165,7 @@ func TestCreateControllerRejectsUnsupportedType(t *testing.T) {
 	// before MaaFramework is touched, and the message names the platform.
 	kind := unsupportedControllerType()
 	if kind == "" {
-		t.Skip("every controller type is runnable on this platform")
+		t.Fatalf("every candidate controller type is runnable on %s; expected one this platform cannot create", pi.PlatformName())
 	}
 	_, err := createController(&pi.Controller{Name: "other", Type: kind}, runOptions{}, &clientconfig.Config{})
 	if err == nil {
@@ -177,7 +177,9 @@ func TestCreateControllerRejectsUnsupportedType(t *testing.T) {
 }
 
 // unsupportedControllerType returns a ProjectInterface controller type this
-// platform cannot create, or "" when there is none.
+// platform cannot create. Every supported host leaves one out — Windows cannot
+// create MacOS, darwin and linux cannot create Win32 — so it never returns ""
+// on a platform this build ships for.
 func unsupportedControllerType() string {
 	for _, kind := range []string{"Win32", "Gamepad", "MacOS", "PlayCover", "Linux"} {
 		if !pi.Compatible(pi.RunnableControllerTypes(), kind) {
