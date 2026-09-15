@@ -26,6 +26,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"maactl/internal/platform"
 )
 
 // payloadDir is the embedded directory that tools/packmaafw populates. It
@@ -33,9 +35,12 @@ import (
 // payload was built in.
 const payloadDir = "payload"
 
-// mainDLL is extracted last, so its presence proves the cache holds a complete
-// extraction.
-const mainDLL = "MaaFramework.dll"
+// mainLibrary is the library extracted last, so its presence proves the cache
+// holds a complete extraction. It is the one library MaaFramework cannot be
+// loaded without, whatever the platform spells it as.
+func mainLibrary() string {
+	return platform.Host().FrameworkLibrary()
+}
 
 // current reads the embedded payload once per process.
 var current = sync.OnceValue(load)
@@ -43,6 +48,7 @@ var current = sync.OnceValue(load)
 type payload struct {
 	container []byte
 	version   string
+	target    string // platform id the libraries were built for, e.g. win-x86_64
 }
 
 // Compiled reports whether this build was compiled to carry MaaFramework.
@@ -51,9 +57,24 @@ func Compiled() bool {
 	return compiled
 }
 
-// Available reports whether this build carries MaaFramework libraries.
+// Available reports whether this build carries MaaFramework libraries for the
+// platform it was built for.
 func Available() bool {
-	return len(current().container) > 0
+	have := current()
+	if len(have.container) == 0 {
+		return false
+	}
+	return compatible(have)
+}
+
+// compatible reports whether a payload may be used by this build. A payload
+// with no recorded platform is accepted, because only the packer writes that
+// marker and an older payload simply does not have one.
+func compatible(have payload) bool {
+	if have.target == "" {
+		return true
+	}
+	return have.target == platform.Host().ID()
 }
 
 // Version returns the MaaFramework version of the embedded libraries, or ""
@@ -62,46 +83,70 @@ func Version() string {
 	return current().version
 }
 
+// Target returns the platform id of the embedded libraries, or "" when it is
+// unknown.
+func Target() string {
+	return current().target
+}
+
 // CacheID identifies the embedded payload so that libraries extracted from a
-// different payload are never reused.
+// different payload—or from a build for another platform—are never reused.
 func CacheID() string {
-	if version := sanitize(current().version); version != "" {
-		return version
+	return cacheID(current())
+}
+
+// cacheID derives the cache directory name of one payload.
+func cacheID(have payload) string {
+	if len(have.container) == 0 {
+		return ""
 	}
-	sum := sha256.Sum256(current().container)
-	return hex.EncodeToString(sum[:8])
+	parts := make([]string, 0, 2)
+	if target := sanitize(have.target); target != "" {
+		parts = append(parts, target)
+	}
+	if version := sanitize(have.version); version != "" {
+		parts = append(parts, version)
+	} else {
+		sum := sha256.Sum256(have.container)
+		parts = append(parts, hex.EncodeToString(sum[:8]))
+	}
+	return strings.Join(parts, "-")
 }
 
 // Extract writes the embedded libraries into target and reports how many files
 // were written. It does nothing when target already holds an extraction.
 func Extract(target string) (int, error) {
-	container := current().container
-	if len(container) == 0 {
+	have := current()
+	if len(have.container) == 0 {
 		return 0, fmt.Errorf("this maactl build does not carry MaaFramework libraries")
 	}
-	return ExtractZip(container, target)
+	if !compatible(have) {
+		return 0, fmt.Errorf("this build carries MaaFramework libraries for %s but was built for %s", have.target, platform.Host().ID())
+	}
+	return ExtractZip(have.container, target)
 }
 
 // ExtractZip extracts a container produced by tools/packmaafw into target,
 // creating parent directories as needed. It reports how many files were written
 // and writes nothing when target already holds an extraction.
 func ExtractZip(container []byte, target string) (int, error) {
-	if fileExists(filepath.Join(target, mainDLL)) {
+	mainName := mainLibrary()
+	if fileExists(filepath.Join(target, mainName)) {
 		return 0, nil
 	}
 	reader, err := zip.NewReader(bytes.NewReader(container), int64(len(container)))
 	if err != nil {
 		return 0, fmt.Errorf("read embedded MaaFramework payload: %w", err)
 	}
-	if !hasEntry(reader, mainDLL) {
-		return 0, fmt.Errorf("embedded MaaFramework payload has no %s", mainDLL)
+	if !hasEntry(reader, mainName) {
+		return 0, fmt.Errorf("embedded MaaFramework payload has no %s", mainName)
 	}
 	written := 0
-	// Every other file is written before mainDLL, so an extraction interrupted
-	// halfway is recognised as incomplete and redone on the next run.
+	// Every other file is written before the main library, so an extraction
+	// interrupted halfway is recognised as incomplete and redone on the next run.
 	for _, main := range []bool{false, true} {
 		for _, file := range reader.File {
-			if strings.HasSuffix(file.Name, "/") || (file.Name == mainDLL) != main {
+			if strings.HasSuffix(file.Name, "/") || (file.Name == mainName) != main {
 				continue
 			}
 			name, err := targetPath(target, file.Name)
@@ -117,7 +162,8 @@ func ExtractZip(container []byte, target string) (int, error) {
 	return written, nil
 }
 
-// readPayload collects the container and version from an embedded payload tree.
+// readPayload collects the container, version, and platform from an embedded
+// payload tree.
 func readPayload(fsys fs.FS) payload {
 	entries, err := fs.ReadDir(fsys, payloadDir)
 	if err != nil {
@@ -134,6 +180,10 @@ func readPayload(fsys fs.FS) payload {
 		case entry.Name() == "version.txt":
 			if data, err := fs.ReadFile(fsys, name); err == nil {
 				result.version = strings.TrimSpace(string(data))
+			}
+		case entry.Name() == "platform.txt":
+			if data, err := fs.ReadFile(fsys, name); err == nil {
+				result.target = strings.TrimSpace(string(data))
 			}
 		}
 	}

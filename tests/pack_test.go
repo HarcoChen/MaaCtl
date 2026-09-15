@@ -3,44 +3,37 @@ package tests
 import (
 	"archive/zip"
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"maactl/internal/maafw/pack"
+	"maactl/internal/platform"
 )
 
-// releaseArchive builds an in-memory archive shaped like an official
-// MaaFramework release, whose runtime lives under bin/ and whose remaining
-// directories must not end up in the payload.
-func releaseArchive(t *testing.T, bin map[string]string) []byte {
+// writeRuntime builds a MaaFramework runtime directory shaped like the bin/ of
+// a release archive: the platform's libraries plus whatever else is passed in.
+func writeRuntime(t *testing.T, target platform.Target, extra map[string]string) string {
 	t.Helper()
+	dir := t.TempDir()
 	files := map[string]string{
-		"README.md":            "# MaaFramework",
-		"docs/1.1-Guide.md":    "docs",
-		"include/MaaDef.h":     "header",
-		"lib/MaaFramework.lib": "import library",
-		"bin/":                 "",
-		"bin/MaaFramework.dll": "framework",
-		"bin/MaaToolkit.dll":   "toolkit",
+		target.FrameworkLibrary(): string(fakeLibrary(target)),
+		target.ToolkitLibrary():   "toolkit",
 	}
-	for name, content := range bin {
+	for name, content := range extra {
 		files[name] = content
 	}
-	var buf bytes.Buffer
-	writer := zip.NewWriter(&buf)
 	for name, content := range files {
-		entry, err := writer.Create(name)
-		if err != nil {
+		full := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := entry.Write([]byte(content)); err != nil {
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := writer.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return buf.Bytes()
+	return dir
 }
 
 func containerFiles(t *testing.T, container []byte) map[string]string {
@@ -65,13 +58,14 @@ func containerFiles(t *testing.T, container []byte) map[string]string {
 	return files
 }
 
-func TestContainerKeepsOnlyBinFiles(t *testing.T) {
-	archive := releaseArchive(t, map[string]string{
-		"bin/plugins/MaaPluginDemo.dll": "plugin",
-		"bin/MaaPiCli.exe":              "cli",
-		"bin/.hidden":                   "hidden",
+func TestContainerKeepsTheWholeRuntime(t *testing.T) {
+	target := platform.Target{OS: platform.Windows, Arch: platform.AMD64}
+	dir := writeRuntime(t, target, map[string]string{
+		"plugins/MaaPluginDemo.dll": "plugin",
+		"MaaPiCli.exe":              "cli",
+		".hidden":                   "hidden",
 	})
-	container, count, err := pack.Container(archive)
+	container, count, err := pack.Container(dir, target)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,76 +79,77 @@ func TestContainerKeepsOnlyBinFiles(t *testing.T) {
 			t.Errorf("payload is missing %s: %v", name, files)
 		}
 	}
-	for name := range files {
-		if strings.HasPrefix(name, "bin/") {
-			t.Errorf("payload kept the bin/ prefix: %s", name)
-		}
-	}
-	if files["MaaFramework.dll"] != "framework" || files["plugins/MaaPluginDemo.dll"] != "plugin" {
+	if files["plugins/MaaPluginDemo.dll"] != "plugin" {
 		t.Errorf("payload content changed: %v", files)
 	}
 }
 
-func TestContainerRejectsIncompleteArchives(t *testing.T) {
-	for name, archive := range map[string][]byte{
-		"not a zip":       []byte("nope"),
-		"no bin":          releaseArchiveNoBin(t),
-		"no MaaToolkit":   releaseArchiveWithBin(t, map[string]string{"MaaFramework.dll": "framework"}),
-		"no MaaFramework": releaseArchiveWithBin(t, map[string]string{"MaaToolkit.dll": "toolkit"}),
+func TestContainerRejectsIncompleteRuntimes(t *testing.T) {
+	target := platform.Target{OS: platform.Linux, Arch: platform.AMD64}
+	empty := t.TempDir()
+	missingToolkit := writeRuntime(t, target, nil)
+	if err := os.Remove(filepath.Join(missingToolkit, target.ToolkitLibrary())); err != nil {
+		t.Fatal(err)
+	}
+	for name, dir := range map[string]string{
+		"missing directory": filepath.Join(t.TempDir(), "nope"),
+		"empty directory":   empty,
+		"no toolkit":        missingToolkit,
 	} {
-		if _, _, err := pack.Container(archive); err == nil {
+		if _, _, err := pack.Container(dir, target); err == nil {
 			t.Errorf("%s: expected an error", name)
 		}
 	}
 }
 
-func releaseArchiveNoBin(t *testing.T) []byte {
-	t.Helper()
-	var buf bytes.Buffer
-	writer := zip.NewWriter(&buf)
-	entry, err := writer.Create("docs/README.md")
+func TestInspectReadsThePlatformFromTheRuntime(t *testing.T) {
+	for _, target := range platform.Supported {
+		dir := writeRuntime(t, target, nil)
+		detected, err := pack.Inspect(dir)
+		if err != nil {
+			t.Fatalf("%s: %v", target.ID(), err)
+		}
+		if detected != target {
+			t.Errorf("Inspect = %s, want %s", detected.ID(), target.ID())
+		}
+	}
+}
+
+func TestInspectRejectsRuntimesItCannotUse(t *testing.T) {
+	empty := t.TempDir()
+	if _, err := pack.Inspect(empty); err == nil {
+		t.Error("expected an empty directory to fail")
+	}
+	if _, err := pack.Inspect(filepath.Join(empty, "missing")); err == nil {
+		t.Error("expected a missing directory to fail")
+	}
+	// A runtime whose header cannot be read still reports its operating system,
+	// but leaves the architecture open so the caller can decide.
+	dir := t.TempDir()
+	for _, name := range []string{"libMaaFramework.so", "libMaaToolkit.so"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("nope"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	detected, err := pack.Inspect(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := entry.Write([]byte("docs")); err != nil {
-		t.Fatal(err)
+	if detected.OS != platform.Linux || detected.Arch != "" {
+		t.Errorf("Inspect = %q, want the Linux runtime without an architecture", detected.ID())
 	}
-	if err := writer.Close(); err != nil {
-		t.Fatal(err)
+	// Packing it for a platform whose libraries are not there must fail.
+	if _, _, err := pack.Container(dir, platform.Target{OS: platform.Linux, Arch: platform.AArch64}); err != nil {
+		t.Errorf("packing a Linux runtime for linux-aarch64: %v", err)
 	}
-	return buf.Bytes()
 }
 
-func releaseArchiveWithBin(t *testing.T, files map[string]string) []byte {
-	t.Helper()
-	var buf bytes.Buffer
-	writer := zip.NewWriter(&buf)
-	for name, content := range files {
-		entry, err := writer.Create("bin/" + name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := entry.Write([]byte(content)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := writer.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return buf.Bytes()
-}
-
-func TestVersionFromName(t *testing.T) {
-	for name, want := range map[string]string{
-		"MAA-win-x86_64-v5.13.0.zip":           "v5.13.0",
-		"assets/MAA-linux-aarch64-v5.13.0.zip": "v5.13.0",
-		"MAA-macos-x86_64-v5.14.0-beta.1.zip":  "v5.14.0-beta.1",
-		"C:/tmp/MAA-win-aarch64-v6.0.1.zip":    "v6.0.1",
-		"maafw-bin.zip":                        "",
-		"MAA-win-x86_64.zip":                   "",
-	} {
-		if got := pack.VersionFromName(name); got != want {
-			t.Errorf("VersionFromName(%q) = %q, want %q", name, got, want)
-		}
+func TestInspectReportsMixedRuntimes(t *testing.T) {
+	dir := writeRuntime(t, platform.Target{OS: platform.MacOS, Arch: platform.AArch64}, map[string]string{
+		"MaaFramework.dll": "windows framework",
+		"MaaToolkit.dll":   "windows toolkit",
+	})
+	if _, err := pack.Inspect(dir); err == nil || !strings.Contains(err.Error(), "several platforms") {
+		t.Errorf("expected a mixed-runtime error, got %v", err)
 	}
 }

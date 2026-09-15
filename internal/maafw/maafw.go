@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 
 	"maactl/internal/maafw/bundled"
+	"maactl/internal/platform"
 
 	maa "github.com/MaaXYZ/maa-framework-go/v4"
 )
@@ -62,7 +64,7 @@ func ResolveLibDir(explicit string) (string, error) {
 		if dir, ok := firstLibDir([]string{explicit}); ok {
 			return dir, nil
 		}
-		return "", fmt.Errorf("MaaFramework DLLs not found in %q (expected MaaFramework.dll and MaaToolkit.dll)", explicit)
+		return "", fmt.Errorf("MaaFramework libraries not found in %q (expected %s)", explicit, libraryList())
 	}
 	dir, err := bundledLibDir()
 	switch {
@@ -76,11 +78,12 @@ func ResolveLibDir(explicit string) (string, error) {
 	if dir, ok := firstLibDir(searchDirs()); ok {
 		return dir, nil
 	}
-	return "", fmt.Errorf("MaaFramework DLLs not found; expected them under %q or in a build with bundled libraries", filepath.Join(".", "maafw", "bin"))
+	return "", fmt.Errorf("MaaFramework libraries not found; expected %s under %q or a build with bundled libraries", libraryList(), filepath.Join(".", "maafw", "bin"))
 }
 
 // searchDirs lists the maafw/bin directories next to the working directory and
-// the executable, in that order.
+// the executable, in that order. The layout is the same on every platform: a
+// MaaFramework release archive unpacks its runtime into bin/.
 func searchDirs() []string {
 	var dirs []string
 	if cwd, err := os.Getwd(); err == nil {
@@ -91,6 +94,12 @@ func searchDirs() []string {
 		dirs = append(dirs, filepath.Join(dir, "maafw", "bin"), filepath.Join(dir, "..", "maafw", "bin"))
 	}
 	return dirs
+}
+
+// libraryList names the libraries a runtime directory must hold for the
+// platform this build targets.
+func libraryList() string {
+	return strings.Join(platform.Host().Libraries(), " and ")
 }
 
 // firstLibDir returns the first candidate that holds the MaaFramework libraries.
@@ -115,7 +124,12 @@ func firstLibDir(candidates []string) (string, bool) {
 
 // hasLibs reports whether dir holds the libraries MaaFramework needs to start.
 func hasLibs(dir string) bool {
-	return fileExists(filepath.Join(dir, "MaaFramework.dll")) && fileExists(filepath.Join(dir, "MaaToolkit.dll"))
+	for _, library := range platform.Host().Libraries() {
+		if !fileExists(filepath.Join(dir, library)) {
+			return false
+		}
+	}
+	return true
 }
 
 // errNoBundle reports a build without an embedded MaaFramework payload.
