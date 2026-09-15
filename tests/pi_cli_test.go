@@ -177,6 +177,66 @@ func TestPIOptionsAllListsUnreferencedOptionsOnce(t *testing.T) {
 	}
 }
 
+// TestPIOptionsAllKeepsReferencedOptionsUnique guards the `--all` listing: an
+// option a layer references must never reappear under [option] with the bogus
+// "not referenced by any layer" reason, even when it does not apply to the
+// selected resource, and a self-referencing option must not gain a phantom
+// extra level.
+func TestPIOptionsAllKeepsReferencedOptionsUnique(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "interface.json")
+	writeFile(t, path, `{
+		"interface_version": 2,
+		"controller": [{"name": "Android", "type": "Adb"}],
+		"resource": [{"name": "base", "path": ["resource/base"]}],
+		"task": [{"name": "t", "entry": "E", "option": ["作战关卡"]}],
+		"option": {
+			"作战关卡": {"type": "select", "resource": ["Official"], "default_case": "普通", "cases": [{"name": "普通"}]},
+			"未引用": {"type": "switch", "default_case": "No", "cases": [{"name": "Yes"}, {"name": "No"}]},
+			"自引用": {"type": "select", "default_case": "a", "cases": [{"name": "a", "option": ["自引用"]}]}
+		}
+	}`)
+	out, err := runCLI("pi", "options", "-f", path, "-t", "t", "--all", "-j")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	var rows []struct {
+		Layer  string `json:"layer"`
+		Name   string `json:"name"`
+		Depth  int    `json:"depth"`
+		Active bool   `json:"active"`
+		Reason string `json:"reason"`
+	}
+	if err := json.Unmarshal([]byte(out), &rows); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	counts := map[string]int{}
+	maxDepth := map[string]int{}
+	cycles := 0
+	for _, row := range rows {
+		counts[row.Name]++
+		if row.Depth > maxDepth[row.Name] {
+			maxDepth[row.Name] = row.Depth
+		}
+		if strings.Contains(row.Reason, "not referenced by any layer") {
+			t.Errorf("option %q carries the wrong reason: %+v", row.Name, row)
+		}
+		if strings.Contains(row.Reason, "cyclic reference") {
+			cycles++
+		}
+	}
+	for name, want := range map[string]int{"作战关卡": 1, "未引用": 1, "自引用": 2} {
+		if counts[name] != want {
+			t.Errorf("option %q listed %d time(s), want %d:\n%s", name, counts[name], want, out)
+		}
+	}
+	if maxDepth["自引用"] != 1 {
+		t.Errorf("self-referencing option depth = %d, want 1:\n%s", maxDepth["自引用"], out)
+	}
+	if cycles != 1 {
+		t.Errorf("cyclic-reference entries = %d, want 1:\n%s", cycles, out)
+	}
+}
+
 // TestPIOptionsJSON checks the machine-readable form.
 func TestPIOptionsJSON(t *testing.T) {
 	path := piFixture(t)

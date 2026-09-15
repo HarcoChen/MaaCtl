@@ -129,8 +129,19 @@ type Contribution struct {
 	Label string
 	// Source is the value source behind the contribution.
 	Source ValueSource
-	// Override is the already-substituted Pipeline fragment.
+	// Override is the already-substituted Pipeline fragment. It keeps password
+	// values in clear because it is what gets sent to the agent; use
+	// MaskedOverride for anything that may be displayed.
 	Override Pipeline
+	// secrets holds the password literals resolved before this contribution so
+	// MaskedOverride can hide them without touching Override.
+	secrets []string
+}
+
+// MaskedOverride returns a copy of the contribution with every password value
+// replaced by ******, safe for --explain. Override itself stays untouched.
+func (c Contribution) MaskedOverride() Pipeline {
+	return maskedPipeline(c.Override, c.secrets)
 }
 
 // Skipped records an option that was referenced but does not apply to the
@@ -149,8 +160,21 @@ type Resolution struct {
 	Contributions []Contribution
 	// Skipped lists referenced options that did not apply.
 	Skipped []Skipped
-	// Override is the merged result of every contribution.
+	// Override is the merged result of every contribution. It keeps password
+	// values in clear because it is what gets sent to the agent; use
+	// MaskedOverride for anything that may be displayed or serialized.
 	Override Pipeline
+	// secrets holds every password literal resolved in this run.
+	secrets []string
+}
+
+// MaskedOverride returns a copy of the merged override with every password
+// value replaced by ******, safe for logging and JSON output.
+func (r *Resolution) MaskedOverride() Pipeline {
+	if r == nil {
+		return nil
+	}
+	return maskedPipeline(r.Override, r.secrets)
 }
 
 // Value returns the selected option value for name, in OptionValue shape.
@@ -195,6 +219,7 @@ func (l *Loaded) Resolve(req Request) (*Resolution, error) {
 		Contributions: r.contributions,
 		Skipped:       r.skipped,
 		Override:      r.override,
+		secrets:       r.secrets,
 	}, nil
 }
 
@@ -233,7 +258,10 @@ type resolver struct {
 	contributions []Contribution
 	skipped       []Skipped
 	override      Pipeline
-	lookupEnv     func(string) (string, bool)
+	// secrets collects every password value resolved so far so the display
+	// copies of the override can mask them.
+	secrets   []string
+	lookupEnv func(string) (string, bool)
 }
 
 // valueLayer is one source of option values.
@@ -645,9 +673,24 @@ func (r *resolver) inputValues(option *Option, value any, provided bool, source 
 		values[field.Name] = fieldValue
 		if field.Password {
 			secrets[field.Name] = true
+			r.addSecret(fieldValue)
 		}
 	}
 	return placeholders, values, secrets, nil
+}
+
+// addSecret records one password literal so MaskedOverride can hide it. Empty
+// values are ignored: they would make every string match.
+func (r *resolver) addSecret(value string) {
+	if value == "" {
+		return
+	}
+	for _, existing := range r.secrets {
+		if existing == value {
+			return
+		}
+	}
+	r.secrets = append(r.secrets, value)
 }
 
 // resolveFieldValue turns a raw field value into the string used in the
@@ -730,7 +773,7 @@ func (r *resolver) addContribution(label string, source ValueSource, fragment Pi
 		return
 	}
 	cloned, _ := CloneJSON(fragment).(map[string]any)
-	r.contributions = append(r.contributions, Contribution{Label: label, Source: source, Override: cloned})
+	r.contributions = append(r.contributions, Contribution{Label: label, Source: source, Override: cloned, secrets: r.secrets})
 	MergePipeline(r.override, fragment)
 }
 

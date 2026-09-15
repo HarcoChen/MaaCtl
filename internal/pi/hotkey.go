@@ -156,7 +156,7 @@ var adbKeyCodes = func() map[string]int {
 		"CTRL": 113, "SHIFT": 59, "ALT": 57, "WIN": 117,
 		"SPACE": 62, "ENTER": 66, "RETURN": 66, "TAB": 61,
 		"ESC": 111, "ESCAPE": 111, "BACKSPACE": 67,
-		"DELETE": 67, "DEL": 67, "INSERT": 124,
+		"DELETE": 112, "DEL": 112, "INSERT": 124,
 		"HOME": 3, "END": 123, "PAGEUP": 92, "PAGEDOWN": 93,
 		"UP": 19, "DOWN": 20, "LEFT": 21, "RIGHT": 22,
 		"CAPSLOCK": 115, "MINUS": 69, "EQUAL": 70, "COMMA": 55, "PERIOD": 56,

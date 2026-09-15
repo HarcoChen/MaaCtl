@@ -3,7 +3,6 @@ package pi
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -67,7 +66,7 @@ func (t *Translator) ResolveJSON(value any) any {
 // ResolveLabels marshals v to JSON and resolves i18n strings in the result. It
 // is the struct-friendly form of ResolveJSON.
 func (t *Translator) ResolveLabels(v any) any {
-	if t == nil || t.table == nil {
+	if t == nil {
 		return v
 	}
 	b, err := json.Marshal(v)
@@ -97,7 +96,7 @@ func (l *Loaded) Translator(lang string) *Translator {
 	}
 	translator := &Translator{lang: code}
 	if fileName, ok := l.Languages[code]; ok && strings.TrimSpace(fileName) != "" {
-		path := filepath.Join(l.Dir, filepath.FromSlash(strings.ReplaceAll(fileName, `\`, "/")))
+		path := resolveRelative(l.Dir, fileName)
 		if b, err := os.ReadFile(path); err == nil {
 			table := map[string]string{}
 			if err := json.Unmarshal(StripJSONC(b), &table); err == nil {

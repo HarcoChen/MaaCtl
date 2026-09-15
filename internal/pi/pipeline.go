@@ -1,9 +1,16 @@
 package pi
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 // Pipeline is a Pipeline override document: node name → node object.
 type Pipeline = map[string]any
+
+// maskedSecret is what display copies of a Pipeline put in place of a password
+// value. It matches the mask used for Selection.MaskedValue.
+const maskedSecret = "******"
 
 // MergePipeline merges src into dst following MaaFramework's resource override
 // semantics: node objects merge by node name, and within a node the same
@@ -50,6 +57,47 @@ func CloneJSON(value any) any {
 	default:
 		return v
 	}
+}
+
+// maskSecrets deep-copies a JSON-compatible value and replaces every string
+// that contains one of the secret literals. A matching string is replaced as a
+// whole because a partial mask could still leak the secret through the rest of
+// the text; non-string leaves are left alone.
+func maskSecrets(value any, secrets []string) any {
+	switch v := value.(type) {
+	case string:
+		for _, secret := range secrets {
+			if secret != "" && strings.Contains(v, secret) {
+				return maskedSecret
+			}
+		}
+		return v
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for key, item := range v {
+			out[key] = maskSecrets(item, secrets)
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = maskSecrets(item, secrets)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+// maskedPipeline returns a display copy of a Pipeline with the secrets masked.
+// A nil Pipeline stays nil; an empty one stays an empty (non-nil) map so the
+// JSON `omitempty` behavior of callers is unchanged.
+func maskedPipeline(pipeline Pipeline, secrets []string) Pipeline {
+	if pipeline == nil {
+		return nil
+	}
+	masked, _ := maskSecrets(pipeline, secrets).(map[string]any)
+	return masked
 }
 
 // asObject narrows a JSON value to an object.

@@ -637,10 +637,10 @@ func printExplain(p *preparedRun) error {
 		fmt.Fprintf(out, "  option %s skipped: %s\n", skipped.Name, skipped.Reason)
 	}
 	for _, contribution := range p.resolution.Contributions {
-		b, _ := json.Marshal(contribution.Override)
+		b, _ := json.Marshal(contribution.MaskedOverride())
 		fmt.Fprintf(out, "  override [%s] %s\n", contribution.Label, b)
 	}
-	final, err := json.MarshalIndent(p.override, "", "  ")
+	final, err := json.MarshalIndent(p.resolution.MaskedOverride(), "", "  ")
 	if err != nil {
 		return err
 	}
@@ -680,7 +680,7 @@ func buildSummary(p *preparedRun, status string, elapsed time.Duration) runSumma
 		Entry:             p.entry,
 		Status:            status,
 		ElapsedMS:         elapsed.Milliseconds(),
-		EffectiveOverride: p.override,
+		EffectiveOverride: p.resolution.MaskedOverride(),
 		ResourcePaths:     p.resourcePaths(),
 	}
 	if p.task != nil {

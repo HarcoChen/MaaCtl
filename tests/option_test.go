@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -386,6 +387,27 @@ func TestPasswordFields(t *testing.T) {
 		t.Errorf("masked = %#v", masked)
 	}
 
+	// The downlink value stays in clear, but every display copy must be masked.
+	maskedOverride, err := json.Marshal(resolution.MaskedOverride())
+	if err != nil {
+		t.Fatalf("marshal masked override: %v", err)
+	}
+	if strings.Contains(string(maskedOverride), "s3cr3t") {
+		t.Errorf("MaskedOverride leaks the password: %s", maskedOverride)
+	}
+	if !strings.Contains(string(maskedOverride), "******") {
+		t.Errorf("MaskedOverride should contain the mask: %s", maskedOverride)
+	}
+	for _, contribution := range resolution.Contributions {
+		b, err := json.Marshal(contribution.MaskedOverride())
+		if err != nil {
+			t.Fatalf("marshal masked contribution: %v", err)
+		}
+		if strings.Contains(string(b), "s3cr3t") {
+			t.Errorf("contribution %s leaks the password: %s", contribution.Label, b)
+		}
+	}
+
 	// Passing a password with --option must be refused.
 	if _, err := project.Resolve(pi.Request{
 		ControllerName: "Android", ResourceName: "base", Task: task,
@@ -397,6 +419,37 @@ func TestPasswordFields(t *testing.T) {
 	// A missing password with no reference is reported.
 	if _, err := project.Resolve(pi.Request{ControllerName: "Android", ResourceName: "base", Task: task}); err == nil {
 		t.Error("expected a missing password to fail")
+	}
+}
+
+// TestHotkeyKeyCodeSnapshot pins the adb and win32 key codes so a stray edit
+// cannot silently drift again: Android DELETE is KEYCODE_FORWARD_DEL (112),
+// while Android BACKSPACE is KEYCODE_DEL (67).
+func TestHotkeyKeyCodeSnapshot(t *testing.T) {
+	cases := []struct {
+		key        string
+		controller string
+		primary    int
+	}{
+		{"Backspace", "Adb", 67},
+		{"Delete", "Adb", 112},
+		{"Del", "Adb", 112},
+		{"Backspace", "Win32", 0x08},
+		{"Delete", "Win32", 0x2E},
+		{"Del", "Win32", 0x2E},
+	}
+	for _, tc := range cases {
+		hotkey, err := pi.ParseHotkey(tc.key)
+		if err != nil {
+			t.Fatalf("parse %q: %v", tc.key, err)
+		}
+		codes, err := hotkey.KeyCodes(tc.controller)
+		if err != nil {
+			t.Fatalf("%q on %s: %v", tc.key, tc.controller, err)
+		}
+		if codes.Primary != tc.primary {
+			t.Errorf("%s %q = %#v, want primary %#x", tc.controller, tc.key, codes, tc.primary)
+		}
 	}
 }
 

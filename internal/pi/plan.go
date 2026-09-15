@@ -95,13 +95,52 @@ func (l *Loaded) planOption(name string, layer Layer, parent, controllerName, re
 	return entries
 }
 
+// referencedOptions returns every option name the current layers reference,
+// following case children, without applying controller/resource filtering. It
+// is the set `pi options --all` must keep out of the [option] section: a name a
+// layer references is never "unreferenced", even when it does not apply here.
+func (l *Loaded) referencedOptions(controllerName, resName string, task *Task) map[string]bool {
+	roots := append([]string(nil), l.GlobalOption...)
+	for i := range l.Resource {
+		if l.Resource[i].Name == resName {
+			roots = append(roots, l.Resource[i].Option...)
+		}
+	}
+	for i := range l.Controller {
+		if l.Controller[i].Name == controllerName {
+			roots = append(roots, l.Controller[i].Option...)
+		}
+	}
+	if task != nil {
+		roots = append(roots, task.Option...)
+	}
+	referenced := map[string]bool{}
+	var visit func(name string)
+	visit = func(name string) {
+		if referenced[name] {
+			return
+		}
+		referenced[name] = true
+		option, ok := l.Option.Get(name)
+		if !ok {
+			return
+		}
+		for i := range option.Cases {
+			for _, child := range option.Cases[i].Option {
+				visit(child)
+			}
+		}
+	}
+	for _, name := range roots {
+		visit(name)
+	}
+	return referenced
+}
+
 // planUnreferenced appends the options no layer mentions, so `pi options --all`
 // shows the full definition list.
 func (l *Loaded) planUnreferenced(controllerName, resName string, task *Task) []OptionPlanEntry {
-	referenced := map[string]bool{}
-	for _, entry := range l.OptionPlan(controllerName, resName, task, false) {
-		referenced[entry.Name] = true
-	}
+	referenced := l.referencedOptions(controllerName, resName, task)
 	var entries []OptionPlanEntry
 	for _, name := range l.Option.Names() {
 		if referenced[name] {
@@ -114,9 +153,12 @@ func (l *Loaded) planUnreferenced(controllerName, resName string, task *Task) []
 			entry.Reason = "not referenced by any layer"
 		}
 		entries = append(entries, entry)
+		// The option itself is already in the chain, so pass it as the path root;
+		// otherwise a self-referencing option adds one bogus extra level.
+		path := &optionPath{name: name}
 		for i := range option.Cases {
 			for _, child := range option.Cases[i].Option {
-				entries = append(entries, l.planOption(child, "option", name, controllerName, resName, nil, 1, active, true)...)
+				entries = append(entries, l.planOption(child, "option", name, controllerName, resName, path, 1, active, true)...)
 			}
 		}
 	}

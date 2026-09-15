@@ -189,6 +189,32 @@ func TestTranslatorResolvesLabels(t *testing.T) {
 	}
 }
 
+// TestResolveLabelsStripsDollarWithoutLanguages verifies that a project without
+// a `languages` declaration still gets `$`-free labels from ResolveLabels, the
+// same way Translator.Resolve does, so PI_CONTROLLER / PI_RESOURCE never carry
+// an unresolved reference.
+func TestResolveLabelsStripsDollarWithoutLanguages(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "interface.json"), `{
+		"interface_version": 2,
+		"controller": [{"name": "Android", "label": "$安卓", "type": "Adb"}],
+		"resource": [{"name": "base", "path": ["resource"], "label": "$基础"}]
+	}`)
+	project, err := pi.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	translator := project.Translator("")
+	controller, ok := translator.ResolveLabels(project.Controller[0]).(map[string]any)
+	if !ok || controller["label"] != "安卓" {
+		t.Fatalf("ResolveLabels without languages = %#v", controller)
+	}
+	resource, ok := translator.ResolveLabels(project.Resource[0]).(map[string]any)
+	if !ok || resource["label"] != "基础" {
+		t.Fatalf("ResolveLabels without languages = %#v", resource)
+	}
+}
+
 // TestLoadMaaFrameworkSampleInterface makes sure the protocol's reference file
 // (JSONC comments, every top-level field) parses into the full model.
 func TestLoadMaaFrameworkSampleInterface(t *testing.T) {

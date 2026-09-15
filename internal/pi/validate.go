@@ -3,7 +3,6 @@ package pi
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -162,7 +161,7 @@ func (l *Loaded) validateControllers(r *Report, opts ValidateOptions) {
 		}
 		if !opts.SkipFiles {
 			for j, p := range ctrl.AttachResourcePath {
-				if _, err := os.Stat(filepath.Join(l.Dir, filepath.FromSlash(p))); err != nil {
+				if _, err := os.Stat(resolveRelative(l.Dir, p)); err != nil {
 					r.warnf(fmt.Sprintf("%s.attach_resource_path[%d]", path, j), "path %q does not exist", p)
 				}
 			}
@@ -184,7 +183,7 @@ func (l *Loaded) validateResources(r *Report, opts ValidateOptions) {
 		}
 		if !opts.SkipFiles {
 			for j, p := range res.Path {
-				if _, err := os.Stat(filepath.Join(l.Dir, filepath.FromSlash(p))); err != nil {
+				if _, err := os.Stat(resolveRelative(l.Dir, p)); err != nil {
 					r.warnf(fmt.Sprintf("%s.path[%d]", path, j), "path %q does not exist", p)
 				}
 			}
@@ -479,7 +478,7 @@ func (l *Loaded) validateLanguages(r *Report, opts ValidateOptions) {
 			r.errorf("languages."+code, "language file path is empty")
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(l.Dir, filepath.FromSlash(file))); err != nil {
+		if _, err := os.Stat(resolveRelative(l.Dir, file)); err != nil {
 			r.warnf("languages."+code, "language file %q does not exist", file)
 		}
 	}

@@ -72,6 +72,14 @@ func resolvePath(path string) (string, error) {
 	return filepath.Clean(abs), nil
 }
 
+// resolveRelative resolves a PI-relative path against base. Windows-style
+// backslashes are normalized first so a project written on Windows loads and
+// validates identically on Linux and macOS; it must stay the single helper the
+// loader, the translator, and the validator all use.
+func resolveRelative(base, p string) string {
+	return filepath.Join(base, filepath.FromSlash(strings.ReplaceAll(p, `\`, "/")))
+}
+
 // fileEntry is one parsed PI file together with its absolute path.
 type fileEntry struct {
 	path string
@@ -109,7 +117,7 @@ func collect(main string) ([]fileEntry, error) {
 			if strings.TrimSpace(imported) == "" {
 				continue
 			}
-			target := filepath.Join(base, filepath.FromSlash(strings.ReplaceAll(imported, `\`, "/")))
+			target := resolveRelative(base, imported)
 			if err := walk(target); err != nil {
 				return err
 			}
@@ -202,9 +210,12 @@ func appendUniqueStrings(dst, extra []string) []string {
 }
 
 // StripJSONC removes // and /* */ comments while preserving comment-like text
-// inside JSON strings.
+// inside JSON strings. An unterminated block comment is left in place so the
+// JSON parser reports the real problem instead of a truncated document.
 func StripJSONC(in []byte) []byte {
+	in = bytes.TrimPrefix(in, []byte("\xEF\xBB\xBF"))
 	var out bytes.Buffer
+	out.Grow(len(in))
 	inString, escaped := false, false
 	for i := 0; i < len(in); i++ {
 		c := in[i]
@@ -235,10 +246,22 @@ func StripJSONC(in []byte) []byte {
 		}
 		if c == '/' && i+1 < len(in) && in[i+1] == '*' {
 			i += 2
-			for i+1 < len(in) && !(in[i] == '*' && in[i+1] == '/') {
+			for {
+				if i >= len(in) {
+					// Unterminated block comment: give the input back untouched.
+					return in
+				}
+				if in[i] == '*' && i+1 < len(in) && in[i+1] == '/' {
+					break
+				}
+				// Keep one newline per comment line so later error line numbers
+				// still point at the real location.
+				if in[i] == '\n' {
+					out.WriteByte('\n')
+				}
 				i++
 			}
-			i++
+			i++ // step onto '/'; the loop's post statement moves past it
 			continue
 		}
 		out.WriteByte(c)

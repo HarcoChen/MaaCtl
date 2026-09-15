@@ -95,3 +95,29 @@ func TestValidateChecksFiles(t *testing.T) {
 		t.Errorf("strict validation should fail on warnings: %+v", strict.Issues)
 	}
 }
+
+// TestValidateAcceptsWindowsStylePaths verifies the validator normalizes
+// backslashes like the loader does, so a project written with Windows-style
+// paths is not reported as missing when it actually loads.
+func TestValidateAcceptsWindowsStylePaths(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "interface.json"), `{
+		"interface_version": 2,
+		"languages": {"zh_cn": "i18n\\zh.json"},
+		"controller": [{"name": "Android", "type": "Adb", "attach_resource_path": ["resource\\extra"]}],
+		"resource": [{"name": "base", "path": ["resource\\base"]}],
+		"task": [{"name": "t", "entry": "E"}]
+	}`)
+	writeFile(t, filepath.Join(dir, "resource", "base", "keep.txt"), "")
+	writeFile(t, filepath.Join(dir, "resource", "extra", "keep.txt"), "")
+	writeFile(t, filepath.Join(dir, "i18n", "zh.json"), `{}`)
+
+	project, err := pi.Load(filepath.Join(dir, "interface.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := project.Validate(pi.ValidateOptions{Strict: true})
+	if !report.OK() {
+		t.Fatalf("windows-style paths should validate: %+v", report.Issues)
+	}
+}
