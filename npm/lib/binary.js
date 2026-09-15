@@ -158,6 +158,21 @@ function verifyBinary(file, { spawn = spawnSync } = {}) {
 }
 
 /**
+ * Delete a temporary file without letting a cleanup failure reach the caller.
+ *
+ * Windows keeps a file locked while a virus scanner or the search indexer reads
+ * it, and an EPERM from `rmSync` inside a `finally` would replace whatever the
+ * try block decided, turning a successful first run into a failed one.
+ */
+function removeQuietly(file) {
+  try {
+    fs.rmSync(file, { force: true });
+  } catch {
+    // A file that stays behind only costs disk space and is rewritten next time.
+  }
+}
+
+/**
  * Unpack maactl.exe out of the downloaded release archive and write it to dest.
  */
 function writeExecutable(archive, dest) {
@@ -223,12 +238,12 @@ async function ensureBinary({ write = () => {}, quiet = false, verify = verifyBi
   } finally {
     // The archive is only ever needed to produce the executable; keeping it
     // would double the cache size for nothing.
-    fs.rmSync(archive, { force: true });
+    removeQuietly(archive);
   }
   try {
     verify(dest);
   } catch (error) {
-    fs.rmSync(dest, { force: true });
+    removeQuietly(dest);
     throw error;
   }
 

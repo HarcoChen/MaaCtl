@@ -21,8 +21,8 @@ npx maactl -- run -t "签到" -if D:\01_Projects\github\MaaMio -sa 30s
 
 npm 包只提供 Windows amd64 的 `maactl.exe`（自带 MaaFramework 运行库）。包内声明了
 `"os": ["win32"]`，在其他系统上 npm 会以 `EBADPLATFORM` 拒绝安装；同时声明了
-`"engines": { "node": ">=22" }`，因为包装器只用 Node 22 及以上提供的内置能力
-（包括从 release 压缩包中解出 exe 所需的 `zlib.crc32`）。
+`"engines": { "node": ">=22.2.0" }`，因为包装器只用 Node 22 及以上提供的内置能力
+（包括从 release 压缩包中解出 exe 所需的 `zlib.crc32`，它自 Node 22.2.0 才引入）。
 
 其他平台请直接从 [Releases](https://github.com/TanyaShue/MaaCtl/releases/latest)
 下载对应的 `maactl-<version>-<platform>.zip`，里面同时包含自带运行库的 `maactl`

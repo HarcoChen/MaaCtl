@@ -6,7 +6,7 @@ on:
       - "v[0-9]*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -128,6 +128,10 @@ jobs:
     name: Publish release
     runs-on: ubuntu-latest
     needs: [version, build, changelog]
+    # Only this job writes: `gh release create/edit/upload` needs it, while the
+    # version, build and changelog jobs above stay read-only.
+    permissions:
+      contents: write
     steps:
       - name: Download every platform archive
         uses: actions/download-artifact@v8

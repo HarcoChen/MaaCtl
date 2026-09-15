@@ -4,6 +4,8 @@
 // catalogue stays small. Language follows MAACTL_LANG, the same variable the
 // CLI itself honours; anything not starting with "zh" falls back to English.
 
+const env = require('./env');
+
 const MESSAGES = {
   zh: {
     downloading: (url) => `maactl: 首次使用，正在下载 maactl.exe\n  ${url}`,
@@ -53,13 +55,13 @@ const MESSAGES = {
   },
 };
 
-function language() {
-  const explicit = (process.env.MAACTL_LANG || '').trim().toLowerCase();
+function language({ platform = process.platform } = {}) {
+  const explicit = env.value('MAACTL_LANG').toLowerCase();
   if (explicit) {
     return explicit.startsWith('zh') ? 'zh' : 'en';
   }
-  if (process.platform !== 'win32') {
-    const posix = `${process.env.LC_ALL || ''}${process.env.LC_MESSAGES || ''}${process.env.LANG || ''}`.toLowerCase();
+  if (platform !== 'win32') {
+    const posix = `${env.value('LC_ALL')}${env.value('LC_MESSAGES')}${env.value('LANG')}`.toLowerCase();
     if (posix) {
       return posix.includes('zh') ? 'zh' : 'en';
     }

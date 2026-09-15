@@ -207,6 +207,70 @@ test('ensureBinary discards a downloaded binary that fails verification', async 
   ));
 });
 
+/**
+ * Run `body` while `fs.rmSync` fails for every path ending in `suffix`, which
+ * models Windows holding the freshly downloaded archive open (antivirus, file
+ * indexer) so that the delete fails with EPERM.
+ */
+async function withFailingRemoval(suffix, body) {
+  const original = fs.rmSync;
+  fs.rmSync = (target, options) => {
+    if (String(target).endsWith(suffix)) {
+      throw Object.assign(new Error(`EPERM: operation not permitted, unlink '${target}'`), { code: 'EPERM' });
+    }
+    return original.call(fs, target, options);
+  };
+  try {
+    return await body();
+  } finally {
+    fs.rmSync = original;
+  }
+}
+
+/** Point the wrapper at `archive` and run `body`, which is expected to fetch it. */
+async function downloadArchive(binary, archive, body) {
+  const route = `/${binary.assetName()}`;
+  return withServer(
+    {
+      [route]: (request, response) => {
+        response.writeHead(200, { 'content-length': archive.length }).end(archive);
+      },
+    },
+    async (base) => {
+      process.env.MAACTL_BINARY_URL = `${base}${route}`;
+      return body();
+    },
+  );
+}
+
+test('ensureBinary keeps a successful unpack when the archive cannot be deleted', async () => {
+  const payload = fakeExe();
+  const archive = fakeArchive(payload);
+  const { binary } = isolatedPackage();
+
+  await withEnvAsync({ MAACTL_HOME: tempDir() }, () => downloadArchive(binary, archive, async () => {
+    const downloaded = await withFailingRemoval('.zip', () => binary.ensureBinary({ quiet: true, verify: () => {} }));
+    assert.equal(downloaded, binary.cacheExePath());
+    assert.equal(fs.statSync(downloaded).size, payload.length, 'the executable is cached despite the locked archive');
+  }));
+});
+
+test('ensureBinary reports the unpack failure when the archive cannot be deleted either', async () => {
+  const archive = zipBuffer({ 'maactl-lite.exe': Buffer.from('lite') });
+  const { binary } = isolatedPackage();
+
+  await withEnvAsync({ MAACTL_HOME: tempDir() }, () => downloadArchive(binary, archive, async () => {
+    await assert.rejects(
+      withFailingRemoval('.zip', () => binary.ensureBinary({ quiet: true })),
+      (error) => {
+        assert.doesNotMatch(error.message, /EPERM/, 'the cleanup failure must not replace the real error');
+        assert.match(error.message, /holds no maactl\.exe/);
+        return true;
+      },
+    );
+  }));
+});
+
 test('formatBytes renders readable sizes', () => {
   assert.equal(formatBytes(0), '0 B');
   assert.equal(formatBytes(512), '512 B');

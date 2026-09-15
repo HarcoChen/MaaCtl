@@ -22,9 +22,10 @@ test('the bin shim is executable-looking and dependency free', () => {
   assert.equal(pkg.devDependencies, undefined);
 });
 
-test('the package is Windows only and needs Node 22+', () => {
+test('the package is Windows only and needs Node 22.2+', () => {
   assert.deepEqual(pkg.os, ['win32']);
-  assert.equal(pkg.engines.node, '>=22');
+  // 22.2.0 is the first release with zlib.crc32, which the zip reader uses.
+  assert.equal(pkg.engines.node, '>=22.2.0');
 });
 
 test('every file referenced by the manifest is published', () => {

@@ -21,6 +21,10 @@ const ENV_KEYS = [
   'MAACTL_QUIET',
   'MAACTL_VERBOSE',
   'MAACTL_LANG',
+  // The wrapper falls back to these when MAACTL_LANG is unset.
+  'LC_ALL',
+  'LC_MESSAGES',
+  'LANG',
   'GH_TOKEN',
   'GITHUB_TOKEN',
   'LOCALAPPDATA',
@@ -79,11 +83,17 @@ async function withEnvAsync(values, body) {
  * by a `vendor/maactl.exe` sitting in the working copy (developers create one
  * with `npm run vendor:binary`), so they run against a copy that is guaranteed
  * to have no vendored executable. Each call returns a distinct module instance.
+ *
+ * `scripts` also copies the scripts/ directory, which is only needed by tests
+ * that run a script as a subprocess.
  */
-function isolatedPackage({ vendor } = {}) {
+function isolatedPackage({ vendor, scripts = false } = {}) {
   const root = tempDir('maactl-npm-pkg-');
   fs.cpSync(path.join(PACKAGE_ROOT, 'lib'), path.join(root, 'lib'), { recursive: true });
   fs.copyFileSync(path.join(PACKAGE_ROOT, 'package.json'), path.join(root, 'package.json'));
+  if (scripts) {
+    fs.cpSync(path.join(PACKAGE_ROOT, 'scripts'), path.join(root, 'scripts'), { recursive: true });
+  }
   if (vendor) {
     fs.mkdirSync(path.join(root, 'vendor'), { recursive: true });
     fs.writeFileSync(path.join(root, 'vendor', 'maactl.exe'), vendor);

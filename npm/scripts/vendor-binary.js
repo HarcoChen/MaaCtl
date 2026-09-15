@@ -8,6 +8,7 @@
 // call it with the exe from `go build` to test the packaging flow offline.
 //
 //   node scripts/vendor-binary.js [path-to-exe]        # default: ../maactl.exe
+//   node scripts/vendor-binary.js --check              # verify vendor/maactl.exe
 //   node scripts/vendor-binary.js --list               # show the current state
 
 const fs = require('node:fs');
@@ -21,13 +22,21 @@ const ROOT = path.resolve(__dirname, '..');
 function usage() {
   process.stderr.write(
     [
-      `usage: node scripts/vendor-binary.js [<maactl.exe>] [--check]`,
+      `usage: node scripts/vendor-binary.js [<maactl.exe>] [--check | --list]`,
       '',
       `Copies <maactl.exe> (default ${path.join(ROOT, '..', EXE_NAME)}) to ${bundledExePath()}.`,
       'Use --check to verify the vendored executable without copying anything.',
+      'Use --list to print the state of the vendored executable without copying anything.',
       '',
     ].join('\n'),
   );
+}
+
+/** Print the size and reported version of the vendored executable. */
+function report(dest) {
+  const version = verifyBinary(dest);
+  const size = formatBytes(fs.statSync(dest).size);
+  process.stdout.write(`vendored ${dest}\n  ${size}\n  ${version}\n`);
 }
 
 function main(argv) {
@@ -38,6 +47,17 @@ function main(argv) {
 
   if (argv.includes('--help') || argv.includes('-h')) {
     usage();
+    return 0;
+  }
+
+  // --list is a read-only status query: it never copies and never fails on a
+  // missing vendor directory, so it is answered before the copy path is set up.
+  if (argv.includes('--list')) {
+    if (fs.existsSync(dest)) {
+      report(dest);
+    } else {
+      process.stdout.write(`no vendored executable at ${dest}\n`);
+    }
     return 0;
   }
 
@@ -53,9 +73,7 @@ function main(argv) {
     throw new Error(`no vendored executable at ${dest}`);
   }
 
-  const version = verifyBinary(dest);
-  const size = formatBytes(fs.statSync(dest).size);
-  process.stdout.write(`vendored ${dest}\n  ${size}\n  ${version}\n`);
+  report(dest);
   return 0;
 }
 

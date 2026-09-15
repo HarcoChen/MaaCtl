@@ -94,8 +94,9 @@ function extractEntry(archive, name) {
   if (payload.length !== entry.uncompressedSize) {
     throw new Error(`truncated zip member ${name}: got ${payload.length} of ${entry.uncompressedSize} bytes`);
   }
-  // zlib.crc32 exists on Node 22; the explicit length check above already caught
-  // truncation, so a missing implementation only loses an extra safety net.
+  // zlib.crc32 was added in Node 22.2.0, which the package's engines floor
+  // requires; the explicit length check above already catches truncation, so a
+  // runtime without it only loses an extra safety net.
   if (typeof zlib.crc32 === 'function' && zlib.crc32(payload) !== entry.checksum) {
     throw new Error(`checksum mismatch for ${name}`);
   }
