@@ -22,9 +22,9 @@ func TestConfigShowWithoutInterfaceSucceeds(t *testing.T) {
 	}
 }
 
-// TestConfigShowMasksOptionValues pins that only an env reference is echoed
-// back: the client config may hold secrets as plaintext, so everything else is
-// masked in both the text and the JSON form, whose shape stays the same.
+// TestConfigShowMasksOptionValues pins the no-ProjectInterface case: nothing is
+// declared, so no value can be shown to be an ordinary one, and only an env
+// reference survives. Both the text and the JSON form keep their shape.
 func TestConfigShowMasksOptionValues(t *testing.T) {
 	config := filepath.Join(t.TempDir(), "maa_pi_config.json")
 	writeFile(t, config, `{
@@ -74,5 +74,44 @@ func TestConfigShowMasksOptionValues(t *testing.T) {
 	}
 	if len(view.Tasks) != 1 || view.Tasks[0].Name != "t" || view.Tasks[0].Option["api_key"] != "******" {
 		t.Errorf("task view = %+v", view.Tasks)
+	}
+}
+
+// TestConfigShowMasksOnlyDeclaredPasswords pins the scoped rule: a field the
+// ProjectInterface declares as a password is hidden, while the ordinary option
+// values next to it stay readable, because `config show` exists to explain the
+// choices in effect.
+func TestConfigShowMasksOnlyDeclaredPasswords(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "interface.json"), `{
+		"interface_version": 2,
+		"controller": [{"name": "Android", "type": "Adb"}],
+		"resource": [{"name": "base", "path": ["resource"]}],
+		"task": [{"name": "t", "entry": "E"}],
+		"option": {
+			"账号": {"type": "input", "inputs": [
+				{"name": "user", "default": "someone"},
+				{"name": "token", "password": true}
+			]},
+			"模式": {"type": "select", "cases": [{"name": "fast"}]}
+		}
+	}`)
+	config := filepath.Join(dir, "maa_pi_config.json")
+	writeFile(t, config, `{"option": {"账号": {"user": "alice", "token": "hunter2"}, "模式": "fast"}}`)
+
+	out, err := runCLI("config", "show", "-f", filepath.Join(dir, "interface.json"), "-cfg", config)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if strings.Contains(out, "hunter2") {
+		t.Errorf("the declared password leaked:\n%s", out)
+	}
+	if !strings.Contains(out, "token:******") {
+		t.Errorf("the declared password must be masked:\n%s", out)
+	}
+	for _, wanted := range []string{"user:alice", "option.模式 = fast"} {
+		if !strings.Contains(out, wanted) {
+			t.Errorf("output is missing %q:\n%s", wanted, out)
+		}
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"maactl/internal/clientconfig"
 	"maactl/internal/i18n"
 	"maactl/internal/output"
+	"maactl/internal/pi"
 
 	"github.com/spf13/cobra"
 )
@@ -70,7 +71,7 @@ Search order: -cfg/--config, then <PI>/config/maa_pi_config.json, then
 			if err != nil {
 				return err
 			}
-			return showConfig(cmd.OutOrStdout(), global, config, path)
+			return showConfig(cmd.OutOrStdout(), global, config, path, project)
 		},
 	})
 	return cmd
@@ -88,14 +89,17 @@ type configOutput struct {
 	Tasks      []configTaskView   `json:"tasks,omitempty"`
 }
 
-// configTaskView is one task entry with password-like values masked.
+// configTaskView is one task entry with its password values masked.
 type configTaskView struct {
 	Name    string         `json:"name"`
 	Enabled *bool          `json:"enabled,omitempty"`
 	Option  map[string]any `json:"option,omitempty"`
 }
 
-func showConfig(out io.Writer, global *GlobalOptions, config *clientconfig.Config, path string) error {
+// showConfig renders the effective configuration. project may be nil when no
+// ProjectInterface is available; it is what tells a declared password field
+// from an ordinary option value.
+func showConfig(out io.Writer, global *GlobalOptions, config *clientconfig.Config, path string, project *pi.Loaded) error {
 	view := configOutput{
 		Path:       path,
 		Exists:     path != "" && fileExists(path),
@@ -103,10 +107,10 @@ func showConfig(out io.Writer, global *GlobalOptions, config *clientconfig.Confi
 		Resource:   config.DefaultResource(),
 		Adb:        config.Adb,
 		Win32:      config.Win32,
-		Option:     maskOptionValues(config.Option),
+		Option:     maskOptionValues(config.Option, project),
 	}
 	for _, task := range config.Task {
-		view.Tasks = append(view.Tasks, configTaskView{Name: task.Name, Enabled: task.Enabled, Option: maskOptionValues(task.Option)})
+		view.Tasks = append(view.Tasks, configTaskView{Name: task.Name, Enabled: task.Enabled, Option: maskOptionValues(task.Option, project)})
 	}
 	if global.JSON {
 		return output.JSON(out, view)
@@ -139,21 +143,51 @@ func showConfig(out io.Writer, global *GlobalOptions, config *clientconfig.Confi
 	return nil
 }
 
-// maskOptionValues hides password-looking values. The client config stores
-// secrets as env references or encrypted blobs; anything that is not an object
-// with an `env` key could be plaintext, so it is not echoed verbatim.
-func maskOptionValues(values map[string]any) map[string]any {
+// maskOptionValues hides the option values the ProjectInterface declares as
+// password inputs: the client config is a supported place to keep them, so they
+// are never echoed back. Every other value stays readable, because `config
+// show` exists to explain the choices in effect.
+//
+// Without a ProjectInterface, or for an option name it does not declare,
+// nothing can be shown to be an ordinary value, so everything is hidden.
+func maskOptionValues(values map[string]any, project *pi.Loaded) map[string]any {
 	if len(values) == 0 {
 		return nil
 	}
 	out := make(map[string]any, len(values))
 	for key, value := range values {
-		out[key] = maskValue(value)
+		secrets, declared := passwordFields(project, key)
+		out[key] = maskValue(value, secrets, !declared, true)
 	}
 	return out
 }
 
-func maskValue(value any) any {
+// passwordFields names the input fields the ProjectInterface declares as
+// passwords for one option. declared is false when the ProjectInterface is
+// missing or does not define the option.
+func passwordFields(project *pi.Loaded, name string) (secrets map[string]bool, declared bool) {
+	if project == nil {
+		return nil, false
+	}
+	option, ok := project.Option.Get(name)
+	if !ok {
+		return nil, false
+	}
+	secrets = map[string]bool{}
+	for _, field := range option.Inputs {
+		if field.Password {
+			secrets[field.Name] = true
+		}
+	}
+	return secrets, true
+}
+
+// maskValue replaces the password fields of one option value with ******. An
+// `env` reference survives as it is: the variable name is not the secret and it
+// says where the value comes from. unknown marks a value whose declaration is
+// not known, and top marks the option's whole value, which cannot be attributed
+// to a single field; both are hidden rather than echoed.
+func maskValue(value any, secrets map[string]bool, unknown, top bool) any {
 	switch v := value.(type) {
 	case map[string]any:
 		if env, ok := v["env"].(string); ok {
@@ -161,19 +195,24 @@ func maskValue(value any) any {
 		}
 		out := make(map[string]any, len(v))
 		for key, item := range v {
-			out[key] = maskValue(item)
+			if secrets[key] {
+				out[key] = "******"
+				continue
+			}
+			out[key] = maskValue(item, secrets, unknown, false)
 		}
 		return out
 	case []any:
 		out := make([]any, len(v))
 		for i, item := range v {
-			out[i] = maskValue(item)
+			out[i] = maskValue(item, secrets, unknown, false)
 		}
 		return out
 	default:
-		// Anything else (a string, number, or boolean) could be a plaintext
-		// secret, so it is never echoed back.
-		return "******"
+		if unknown || (top && len(secrets) > 0) {
+			return "******"
+		}
+		return v
 	}
 }
 
