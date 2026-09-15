@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"maactl/internal/i18n"
@@ -118,6 +119,9 @@ func outputInfo(out io.Writer, ctx *piContext) error {
 	for code := range project.Languages {
 		languages = append(languages, code)
 	}
+	// project.Languages is a map, so the codes are sorted to keep the JSON array
+	// in a stable order.
+	sort.Strings(languages)
 	info := infoOutput{
 		Path:             project.Path,
 		Files:            project.Files,

@@ -73,7 +73,9 @@ func portables(head []byte) ([]Arch, error) {
 	}
 	// The DOS stub points at the PE signature.
 	offset := int(binary.LittleEndian.Uint32(head[0x3c:]))
-	if offset+6 > len(head) || string(head[offset:offset+4]) != "PE\x00\x00" {
+	// On a 32-bit build a corrupt e_lfanew turns into a negative int, so the
+	// offset is checked before it reaches the slice expression.
+	if offset < 0 || offset+6 > len(head) || string(head[offset:offset+4]) != "PE\x00\x00" {
 		return nil, ErrUnknownArch
 	}
 	switch machine := binary.LittleEndian.Uint16(head[offset+4:]); machine {

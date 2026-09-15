@@ -127,23 +127,24 @@ func runtimeFiles(dir string) ([]string, error) {
 
 // hasLibraries reports whether every library of target is present in dir.
 func hasLibraries(dir string, target platform.Target) bool {
-	for _, library := range target.Libraries() {
-		if info, err := os.Stat(filepath.Join(dir, library)); err != nil || info.IsDir() {
-			return false
-		}
-	}
-	return true
+	return len(missingLibraries(dir, target)) == 0
 }
 
-// requireLibraries fails unless dir holds every library of target, naming what
-// is missing so a half-extracted archive is obvious.
-func requireLibraries(dir string, target platform.Target) error {
+// missingLibraries names the libraries of target that dir does not hold, in
+// target order, so a half-extracted archive is obvious.
+func missingLibraries(dir string, target platform.Target) []string {
 	var missing []string
 	for _, library := range target.Libraries() {
 		if info, err := os.Stat(filepath.Join(dir, library)); err != nil || info.IsDir() {
 			missing = append(missing, library)
 		}
 	}
+	return missing
+}
+
+// requireLibraries fails unless dir holds every library of target.
+func requireLibraries(dir string, target platform.Target) error {
+	missing := missingLibraries(dir, target)
 	if len(missing) > 0 {
 		return fmt.Errorf("%s is missing %s for %s; unpack the MAA-%s release archive into %s",
 			dir, strings.Join(missing, ", "), target.ID(), target.ID(), filepath.Dir(dir))

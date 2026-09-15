@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"maactl/internal/maafw/bundled"
@@ -103,6 +104,48 @@ func TestExtractZipRejectsBrokenContainers(t *testing.T) {
 	incomplete := payloadContainer(t, map[string]string{toolkitLibrary(): "toolkit"})
 	if _, err := bundled.ExtractZip(incomplete, target); err == nil {
 		t.Error("expected a container without the framework library to fail")
+	}
+}
+
+// TestExtractZipLeavesNoPartialExtractionWhenItFails pins the atomic write: the
+// main library doubles as the completeness marker of the cache directory, so a
+// failed extraction must not leave a half-written one behind, and no temporary
+// file may survive it either.
+func TestExtractZipLeavesNoPartialExtractionWhenItFails(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A file where the payload wants a directory makes the extraction fail
+	// halfway through.
+	blocked := filepath.Join(target, "plugins")
+	if err := os.WriteFile(blocked, []byte("blocked"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bundled.ExtractZip(completePayload(t), target); err == nil {
+		t.Fatal("expected extracting into a blocked directory to fail")
+	}
+	if _, err := os.Stat(filepath.Join(target, frameworkLibrary())); err == nil {
+		t.Error("a failed extraction must not leave the main library behind")
+	}
+	// No half-written file is left around: a temporary file is renamed into
+	// place only once it is complete.
+	if err := filepath.WalkDir(filepath.Dir(target), func(name string, entry os.DirEntry, err error) error {
+		if err == nil && strings.HasSuffix(entry.Name(), ".tmp") {
+			t.Errorf("%s was left behind", name)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// The same payload extracts completely once the obstruction is gone, so a
+	// failed run never poisons the cache.
+	if err := os.Remove(blocked); err != nil {
+		t.Fatal(err)
+	}
+	written, err := bundled.ExtractZip(completePayload(t), target)
+	if err != nil || written != 3 {
+		t.Fatalf("repair wrote %d files, err %v; want 3", written, err)
 	}
 }
 

@@ -302,35 +302,40 @@ func (p *preparedRun) runTaskOn(tasker *maa.Tasker, stopSignal <-chan os.Signal)
 	case <-stopAfter:
 		tasker.PostStop()
 		time.Sleep(250 * time.Millisecond)
-		p.report("StoppedAfterDuration", started)
-		return nil
+		return p.report("StoppedAfterDuration", started)
 	case <-deadline:
 		tasker.PostStop()
 		time.Sleep(250 * time.Millisecond)
-		p.report("Timeout", started)
+		if err := p.report("Timeout", started); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: write run summary: %v\n", err)
+		}
 		return exitErrorf(ExitTimeout, "task %q timed out after %s", p.entry, p.opt.timeout)
 	case status := <-done:
 		if !status.Success() {
-			p.report(status.String(), started)
+			if err := p.report(status.String(), started); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: write run summary: %v\n", err)
+			}
 			return exitErrorf(ExitTask, "task %q finished with %s", p.entry, status)
 		}
-		p.report(status.String(), started)
-		return nil
+		return p.report(status.String(), started)
 	}
 }
 
-// report prints the run summary in text or JSON.
-func (p *preparedRun) report(status string, started time.Time) {
+// report prints the run summary in text or JSON. A failure to write it is
+// reported to the caller instead of being discarded, so a broken stdout pipe is
+// not mistaken for a successful run.
+func (p *preparedRun) report(status string, started time.Time) error {
 	summary := buildSummary(p, status, time.Since(started))
 	if p.global.JSON {
-		_ = output.JSON(os.Stdout, summary)
-		return
+		return output.JSON(os.Stdout, summary)
 	}
-	fmt.Fprintf(os.Stdout, "%s: %s (%d ms)\n", status, p.entry, summary.ElapsedMS)
+	_, err := fmt.Fprintf(os.Stdout, "%s: %s (%d ms)\n", status, p.entry, summary.ElapsedMS)
+	return err
 }
 
-// execPath resolves an executable path. A bare name stays untouched so
-// exec.Command finds it through PATH; a relative path resolves against dir.
+// execPath resolves an executable path for a pretask or an agent. A bare name
+// stays untouched so exec.Command finds it through PATH; a relative path
+// resolves against dir, the directory holding the interface.json.
 func execPath(dir, exec string) string {
 	if filepath.IsAbs(exec) || !strings.ContainsAny(exec, `/\`) {
 		return exec

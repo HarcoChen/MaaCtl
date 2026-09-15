@@ -1,10 +1,11 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
-	"strings"
 
 	"maactl/internal/clientconfig"
 	"maactl/internal/i18n"
@@ -58,8 +59,10 @@ Search order: -cfg/--config, then <PI>/config/maa_pi_config.json, then
 			project, err := global.LoadProject()
 			if err != nil {
 				// A missing ProjectInterface is fine for inspecting the config
-				// itself, but an unreadable one is not.
-				if !strings.Contains(err.Error(), "no such file") {
+				// itself, but an unreadable one is not. The check goes through
+				// errors.Is so it holds on every platform, whatever the
+				// operating system spells the missing-file error as.
+				if !errors.Is(err, fs.ErrNotExist) {
 					return err
 				}
 			}
@@ -168,7 +171,9 @@ func maskValue(value any) any {
 		}
 		return out
 	default:
-		return value
+		// Anything else (a string, number, or boolean) could be a plaintext
+		// secret, so it is never echoed back.
+		return "******"
 	}
 }
 

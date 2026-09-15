@@ -26,11 +26,31 @@ func bundledLibDir() (string, error) {
 	}
 	root, err := os.UserCacheDir()
 	if err != nil {
-		root = os.TempDir()
+		root, err = fallbackCacheDir()
+		if err != nil {
+			return "", err
+		}
 	}
 	target := filepath.Join(root, "maactl", "maafw", bundled.CacheID(), "bin")
 	if _, err := bundled.Extract(target); err != nil {
 		return "", err
 	}
 	return target, nil
+}
+
+// fallbackCacheDir names a cache root under the system temporary directory for
+// the case where the user cache directory is unavailable. The temporary
+// directory is world-writable, so the name carries the user id (or, on Windows
+// where os.Getuid reports -1, the process id, which never spells an invalid path
+// name) and the directory is created readable by its owner only.
+func fallbackCacheDir() (string, error) {
+	owner := os.Getuid()
+	if owner < 0 {
+		owner = os.Getpid()
+	}
+	dir := filepath.Join(os.TempDir(), fmt.Sprintf("maactl-%d", owner))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create MaaFramework cache directory: %w", err)
+	}
+	return dir, nil
 }

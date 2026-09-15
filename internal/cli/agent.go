@@ -63,14 +63,11 @@ type agentLaunch struct {
 // startAgents starts and connects every agent declared by the ProjectInterface.
 // env carries the PI_* context variables (protocol v2.5.0); the returned agents
 // must be stopped by the caller when the run ends. On error no agent is left
-// running.
+// running. The caller has already dropped the agents it does not want, so
+// --no-agent is resolved before this point.
 func startAgents(project *pi.Loaded, res *maa.Resource, resName string, opt runOptions, stop <-chan os.Signal, env []string) ([]*agentProcess, error) {
 	specs := declaredAgents(project.Agent)
 	if len(specs) == 0 {
-		return nil, nil
-	}
-	if opt.noAgent {
-		fmt.Printf("Not starting %d declared agent(s): --no-agent is set\n", len(specs))
 		return nil, nil
 	}
 	agents := make([]*agentProcess, 0, len(specs))
@@ -151,7 +148,7 @@ func (l agentLaunch) start(spec pi.Agent) (*agentProcess, error) {
 
 	// Every MaaFramework agent binding reads the socket identifier from its last
 	// argument, so it is appended after the declared child_args.
-	cmd := exec.Command(agentExecPath(l.project.Dir, spec.ChildExec), append(append([]string{}, spec.ChildArgs...), identifier)...)
+	cmd := exec.Command(execPath(l.project.Dir, spec.ChildExec), append(append([]string{}, spec.ChildArgs...), identifier)...)
 	// The PI protocol defines the agent working directory as the directory
 	// holding interface.json, which also resolves relative child_exec paths.
 	cmd.Dir = l.project.Dir
@@ -210,16 +207,6 @@ func (l agentLaunch) start(spec pi.Agent) (*agentProcess, error) {
 	return agent, nil
 }
 
-// agentExecPath resolves child_exec. A bare name stays untouched so exec.Command
-// finds it through PATH; a relative path belongs to the interface.json
-// directory, which is also the agent's working directory.
-func agentExecPath(dir, childExec string) string {
-	if filepath.IsAbs(childExec) || !strings.ContainsAny(childExec, `/\`) {
-		return childExec
-	}
-	return filepath.Join(dir, filepath.FromSlash(strings.ReplaceAll(childExec, `\`, "/")))
-}
-
 // registrations describes what the agent server registered, so a successful
 // connection also shows what the agent provides.
 func (a *agentProcess) registrations() string {
@@ -257,10 +244,14 @@ func (a *agentProcess) shutdown() {
 }
 
 // abandon gives up on an agent whose AgentClient may still be blocked inside
-// Connect. The client outlives this call and is released when the process ends,
-// but the child process is stopped so nothing is left running.
+// Connect. Destroying the client releases the connection and its socket, and
+// the child process is stopped so nothing is left running. shutdown is not
+// called after abandon, so the client is never destroyed twice.
 func (a *agentProcess) abandon() {
-	a.client = nil
+	if a.client != nil {
+		a.client.Destroy()
+		a.client = nil
+	}
 	a.stopProcess()
 }
 

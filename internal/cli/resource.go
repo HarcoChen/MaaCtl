@@ -238,7 +238,15 @@ func loadResourceBundles(plan *resourcePlan) (*maa.Resource, []string, error) {
 	return res, all, nil
 }
 
-func outputResourceNodes(out io.Writer, global *GlobalOptions, res *maa.Resource) error {
+// resourceReader is the read-only part of a loaded MaaFramework resource that
+// the resource queries consume. *maa.Resource satisfies it; the interface keeps
+// their error handling testable without loading MaaFramework.
+type resourceReader interface {
+	GetHash() (string, error)
+	GetNodeList() ([]string, error)
+}
+
+func outputResourceNodes(out io.Writer, global *GlobalOptions, res resourceReader) error {
 	nodes, err := res.GetNodeList()
 	if err != nil {
 		return withExitCode(ExitResource, fmt.Errorf("read resource nodes: %w", err))
@@ -252,7 +260,7 @@ func outputResourceNodes(out io.Writer, global *GlobalOptions, res *maa.Resource
 	return nil
 }
 
-func outputResourceHash(out io.Writer, global *GlobalOptions, res *maa.Resource, plan *resourcePlan, verify bool) error {
+func outputResourceHash(out io.Writer, global *GlobalOptions, res resourceReader, plan *resourcePlan, verify bool) error {
 	hash, err := res.GetHash()
 	if err != nil {
 		return withExitCode(ExitResource, fmt.Errorf("read resource hash: %w", err))
@@ -283,9 +291,15 @@ func outputResourceHash(out io.Writer, global *GlobalOptions, res *maa.Resource,
 	}
 }
 
-func outputResourceInspect(out io.Writer, global *GlobalOptions, res *maa.Resource, plan *resourcePlan, loadedPaths []string) error {
-	hash, _ := res.GetHash()
-	nodes, _ := res.GetNodeList()
+func outputResourceInspect(out io.Writer, global *GlobalOptions, res resourceReader, plan *resourcePlan, loadedPaths []string) error {
+	hash, err := res.GetHash()
+	if err != nil {
+		return withExitCode(ExitResource, fmt.Errorf("read resource hash: %w", err))
+	}
+	nodes, err := res.GetNodeList()
+	if err != nil {
+		return withExitCode(ExitResource, fmt.Errorf("read resource nodes: %w", err))
+	}
 	result := map[string]any{
 		"paths":         loadedPaths,
 		"hash":          hash,

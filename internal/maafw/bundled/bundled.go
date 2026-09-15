@@ -200,6 +200,11 @@ func targetPath(target, name string) (string, error) {
 	return filepath.Join(target, filepath.FromSlash(relative)), nil
 }
 
+// writeFile writes one archive entry atomically: the data goes to a temporary
+// file next to the destination and is renamed into place only once it is
+// complete. An interrupted extraction therefore never leaves a half-written
+// file behind, which matters most for the main library that doubles as the
+// completeness marker of the cache directory.
 func writeFile(name string, file *zip.File) error {
 	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 		return err
@@ -209,15 +214,24 @@ func writeFile(name string, file *zip.File) error {
 		return fmt.Errorf("extract %s: %w", file.Name, err)
 	}
 	defer reader.Close()
-	writer, err := os.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	temp := name + ".tmp"
+	writer, err := os.OpenFile(temp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
 	if _, err := io.Copy(writer, reader); err != nil {
 		writer.Close()
+		os.Remove(temp)
 		return fmt.Errorf("extract %s: %w", file.Name, err)
 	}
 	if err := writer.Close(); err != nil {
+		os.Remove(temp)
+		return fmt.Errorf("extract %s: %w", file.Name, err)
+	}
+	// Renaming inside one directory is atomic, so the destination is either
+	// the previous file or the complete new one.
+	if err := os.Rename(temp, name); err != nil {
+		os.Remove(temp)
 		return fmt.Errorf("extract %s: %w", file.Name, err)
 	}
 	return nil

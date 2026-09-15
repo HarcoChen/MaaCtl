@@ -61,6 +61,13 @@ func createController(spec *pi.Controller, opt runOptions, config *clientconfig.
 		return nil, fmt.Errorf("controller %q has type %q, which cannot be created on %s; this build supports %s",
 			spec.Name, spec.Type, pi.PlatformName(), pi.Join(pi.RunnableControllerTypes()))
 	}
+	// Protocol: permission_required tells the client that this controller needs
+	// elevated rights on the host. Checking the current privilege level would
+	// need platform specific code, so the declaration is reported instead of
+	// being ignored.
+	if spec.PermissionRequired {
+		fmt.Fprintf(os.Stderr, "warning: controller %q declares permission_required; run maactl with the privileges that controller needs\n", spec.Name)
+	}
 	switch {
 	case strings.EqualFold(spec.Type, controllerTypeAdb):
 		return createAdbController(spec, opt, config)

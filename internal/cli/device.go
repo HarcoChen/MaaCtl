@@ -104,13 +104,15 @@ func newLegacyDeviceCommands(global *GlobalOptions) []*cobra.Command {
 	return []*cobra.Command{legacy("adb", "adb"), legacy("win32", "window")}
 }
 
-// withMaaFramework initializes the runtime, runs fn, and releases it.
+// withMaaFramework initializes the runtime, runs fn, and releases it. The log
+// directory is the global --log-dir, so the option reaches the device and
+// resource groups as well.
 func withMaaFramework(global *GlobalOptions, fn func() error) error {
 	libDir, err := maafw.ResolveLibDir(global.LibDir)
 	if err != nil {
 		return withExitCode(ExitInternal, err)
 	}
-	if err := maafw.Init(libDir, ""); err != nil {
+	if err := maafw.Init(libDir, global.LogDir); err != nil {
 		return withExitCode(ExitInternal, fmt.Errorf("initialize MaaFramework from %s: %w", libDir, err))
 	}
 	defer func() { _ = maa.Release() }()

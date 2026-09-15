@@ -525,8 +525,13 @@ func runTask(global *GlobalOptions, name string, opt runOptions) error {
 		if err != nil {
 			return withExitCode(ExitUsage, err)
 		}
+		// The selected task has to exist for a preset entry to match it, so the
+		// resolved entry is compared under a nil guard: otherwise two names the
+		// project does not know would both resolve to nil and match each other,
+		// swallowing the "does not include task" warning below.
+		target := project.LookupTask(name, global.Language())
 		for i := range preset.Task {
-			if project.LookupTask(preset.Task[i].Name, global.Language()) == project.LookupTask(name, global.Language()) {
+			if target != nil && project.LookupTask(preset.Task[i].Name, global.Language()) == target {
 				presetEntry = &preset.Task[i]
 				break
 			}
