@@ -100,11 +100,22 @@ def pack(executables: list[Path], platform: str, version: str, directory: Path) 
 
 
 def main() -> None:
+    # The executables echo localized (non-ASCII) text, and a Windows console
+    # defaults to a code page that cannot encode it; printing must not be what
+    # fails the release.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--platform", required=True, help="MaaFramework platform id, e.g. win-x86_64")
     parser.add_argument("--version", required=True, help="maactl version, e.g. 0.1.2")
     parser.add_argument("--dir", default="dist", help="directory receiving the executables and the archive (default: dist)")
     args = parser.parse_args()
+
+    # An empty version would silently build a nameless executable and an
+    # archive called "maactl--<platform>.zip", so reject it here instead.
+    if not args.version.strip():
+        raise SystemExit("error: --version is empty; pass the release version, e.g. 0.1.2")
 
     directory = Path(args.dir)
     built = build(args.platform, args.version, directory)

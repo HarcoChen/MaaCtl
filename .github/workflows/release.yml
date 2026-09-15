@@ -90,7 +90,9 @@ jobs:
           go test ./...
           go test -tags bundled ./...
       - name: Build, verify, and pack
-        run: python .github/scripts/build_release.py --platform ${{ matrix.platform }} --version "$VERSION"
+        # The version comes from the version job rather than a shell variable:
+        # Windows runners use PowerShell, where $VERSION is an unset variable.
+        run: python .github/scripts/build_release.py --platform ${{ matrix.platform }} --version "${{ needs.version.outputs.version }}"
       - name: Upload the platform archive
         uses: actions/upload-artifact@v7
         with:
