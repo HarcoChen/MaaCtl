@@ -82,7 +82,7 @@ Commands:
 
 Global Flags:
   -f, --interface string   ProjectInterface file or project directory (default: ./interface.json)
-  -l, --lib-dir string     MaaFramework DLL directory (default: ./maafw/bin)
+  -l, --lib-dir string     MaaFramework library directory (default: ./maafw/bin)
   -j, --json               emit JSON on stdout; run also switches sink events to JSON
   -h, --help               help for maactl
       --version            print version information
@@ -231,7 +231,7 @@ Examples:
 | 位置 | 现状 | 建议 |
 | --- | --- | --- |
 | 全局 `--interface` | `ProjectInterface file or directory (default: ./interface.json)` | `ProjectInterface file or project directory (default: ./interface.json in the current directory)` |
-| 全局 `--lib-dir` | `MaaFramework DLL directory (default: ./maafw/bin)` | `MaaFramework runtime directory containing MaaFramework.dll and MaaToolkit.dll (default: ./maafw/bin)` |
+| 全局 `--lib-dir` | `MaaFramework library directory (default: ./maafw/bin)` | `MaaFramework library directory (default: ./maafw/bin)` |
 | 全局 `--json` | `output JSON` | `emit JSON on stdout; run also switches sink events to JSON` |
 | `run --events` | `sink output: focus (default), all, or off` | `event output: focus (PI focus text only), all (all sink events), off (default "focus")` |
 | `run --stop-after` | `stop a running task after this duration (for bounded runs/tests)` | `stop the task after this duration; use for bounded runs and tests (e.g. 30s)` |

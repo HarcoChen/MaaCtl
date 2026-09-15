@@ -41,7 +41,7 @@ maactl device adb -j
 | 短形式 | 长形式 | 作用 |
 | --- | --- | --- |
 | `-f` / `-if` | `--interface <path>` | PI 文件或项目目录（默认：`./interface.json`） |
-| `-l` / `-lib` | `--lib-dir <dir>` | MaaFramework DLL 目录（默认：`./maafw/bin`，bundled 构建用内嵌运行库） |
+| `-l` / `-lib` | `--lib-dir <dir>` | MaaFramework 运行库目录（默认：`./maafw/bin`，bundled 构建用内嵌运行库） |
 | `-j` | `--json` | 输出 JSON；运行时 sink 事件也变为 JSON 行 |
 | `-lg` | `--lang <code>` | 解析 PI `$label` 的语言，如 `zh_cn`、`en_us`（默认：跟随系统） |
 | `-cfg` | `--config <path>` | 客户端配置文件（默认自动发现，见下） |
@@ -76,7 +76,7 @@ maactl device adb -j
 2. `<PI 目录>/config/maa_pi_config.json`；
 3. `<当前目录>/config/maa_pi_config.json`。
 
-识别 `controller`、`resource`、`adb.*`、`win32.*`、`option`、`task[].name/option/enabled`；
+识别 `controller`、`resource`、`adb.*`、`win32.*`、`macos.*`、`playcover.*`、`linux.*`、`option`、`task[].name/option/enabled`；
 未知字段（如 MFAA 的 `__key`）忽略。文件存在但无法解析时会报错，而不是静默丢弃；
 用 `-nocfg/--no-config` 完全跳过，用 `config show` 查看生效值。
 
@@ -137,12 +137,16 @@ maactl resource h -pa D:\projects\pkg\resource -vf
 
 ```powershell
 maactl device adb      / maactl device a      # 地址、ADB 路径、建议的截图/输入方式
-maactl device win32    / maactl device w      # 窗口名、类名、句柄
+maactl device window   / maactl device w      # 窗口名、类名、句柄
 maactl device adb -j
 ```
 
-这里的地址、名称、类名、句柄可以原样传给 `run` 的 `-a`/`-nm`/`-wh` 等选项。
-旧命令 `maactl adb devices` 与 `maactl win32 devices` 仍然可用（隐藏命令，会打印迁移提示）。
+`device window` 在 Windows / macOS / Linux 上都可用（MaaToolkit 的桌面窗口发现）：Windows 报
+窗口类名与 HWND，macOS 报应用 bundle id 与 CGWindowID，Linux 报窗口类名与 X11 窗口 id。
+旧名 `device win32` 保留为别名；`maactl adb devices` 与 `maactl win32 devices` 也仍然可用
+（隐藏命令，会打印迁移提示）。
+
+这里的地址、名称、类名、句柄/窗口 id 可以原样传给 `run` 的 `-a`/`-nm`/`-wh`/`-mid` 等选项。
 
 ## 运行：`run`（`r`）
 
@@ -166,7 +170,11 @@ maactl run -n <node-name>           # 等价 run node
 | 目标 | `-ap` | `--adb-path` | 覆盖 adb 可执行文件；地址未被发现时也能直接建控制器 |
 | 目标 | `-wh` `-wc` `-ww` | `--win32-handle` / `-class` / `-window` | Win32 窗口选择（默认：命令行 → 配置 → PI 正则 → 唯一窗口） |
 | 目标 | `-ws` `-wm` `-wk` | `--win32-screencap` / `-mouse` / `-keyboard` | 覆盖 Win32 截图/输入方式 |
-| 目标 | `-gt` | `--gamepad-type <Xbox360\|DualShock4>` | 虚拟手柄类型 |
+| 目标 | `-gt` | `--gamepad-type <Xbox360\|DualShock4>` | 虚拟手柄类型（仅 Windows） |
+| 目标 | `-mw` `-mid` | `--macos-window` / `--macos-window-id` | macOS 目标窗口：标题正则或 `device window` 里的窗口 id（都不给则整屏，即 window id 0） |
+| 目标 | `-ms` `-mi` | `--macos-screencap` / `--macos-input` | macOS 截图/输入方式（默认：PI → `ScreenCaptureKit` / `GlobalEvent`） |
+| 目标 | `-pca` `-pcu` | `--playcover-address` / `--playcover-uuid` | PlayCover（macOS）服务地址与应用标识（默认：配置 → PI `playcover.uuid` → `maa.playcover`） |
+| 目标 | `-ls` `-lv` | `--linux-socket` / `--linux-vk` | Linux（wlroots）Wayland socket（默认：配置 `linux.wlr_socket_path` → `$WAYLAND_DISPLAY`）与按键码类型 |
 | 配置项 | `-opt` | `--option <name>=<value>` | 配置项取值，可重复，语法见下 |
 | 配置项 | `-of` | `--option-file <path>` | 配置项取值 JSON 文件 |
 | 配置项 | `-p` | `--preset <name>` | 把该 preset 在此 task 上的取值应用到本次运行（仅 `run task`） |
@@ -182,6 +190,10 @@ maactl run -n <node-name>           # 等价 run node
 | 控制 | `-sa` | `--stop-after <duration>` | 运行指定时长后停止并视为成功（调试用） |
 | 控制 | `-na` / `-al` | `--no-agent` / `--agent-log <term\|off\|dir>` | 是否启动 agent、agent 输出去向 |
 | 控制 | `-k` | `--continue-on-error` | `run preset` 中某个 task 失败后继续 |
+
+平台专属的目标选项（`--win32-*`、`--gamepad-type`、`--macos-*`、`--playcover-*`、`--linux-*`）
+在任何平台上都会出现在帮助里，方便同一份脚本跨平台复用；不属于当前平台的控制器类型不会被创建，
+而是直接报错并列出本平台支持的控制器类型（`pi validate` 也会对其给出警告）。
 
 ### `run task`
 
@@ -314,6 +326,17 @@ maactl -v
 运行期输出分流：进度信息与错误走 stderr，focus 文本与最终摘要走 stdout，方便
 `maactl run ... > focus.log` 只收集任务输出。
 
+## 排查运行库：`selfcheck`（隐藏命令）
+
+```bash
+maactl selfcheck
+# MaaFramework v5.13.0 (linux-x86_64, bundled) from /home/me/.cache/maactl/maafw/linux-x86_64-v5.13.0/bin
+```
+
+它按与其它命令相同的方式加载 MaaFramework（自带运行库 → `-lib-dir` → `./maafw/bin`），
+打印实际加载到的版本、平台与来源；加载失败时以退出码 1 结束。用于区分“运行库有问题”与
+“项目/设备有问题”，CI 也在每个平台上跑它。它不出现在 `-h` 里。
+
 ## 迁移对照（第一版 → 第二版）
 
 | 旧写法 | 新写法 |
@@ -323,7 +346,7 @@ maactl -v
 | `maactl interface --resources` | `maactl resource list`（`maactl resource l`） |
 | `maactl interface --options/--presets` | `maactl pi options/presets`（已实现） |
 | `maactl adb devices` | `maactl device adb`（旧命令保留迁移提示） |
-| `maactl win32 devices` | `maactl device win32` |
+| `maactl win32 devices` | `maactl device window`（`device win32` 仍为别名） |
 | `maactl resource -i` / `maactl resource -n` | `maactl resource inspect` / `maactl resource nodes` |
 | `maactl run task <name>` / `run -t` | 不变 |
 | `maactl run node <name>` / `run -n` | 不变 |

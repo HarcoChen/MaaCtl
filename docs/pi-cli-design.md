@@ -57,7 +57,7 @@ maactl [global flags] <group> [subcommand] [arguments] [flags]
 
   device, dev                    设备与窗口（MaaToolkit 发现）
     adb, a                      列出 ADB 设备
-    win32, w                    列出桌面窗口
+    window, w, win32            列出桌面窗口
 
   run, r                         执行
     task, t <task-name>         运行 PI task（可用 -p/--preset 套用预设取值）
@@ -79,7 +79,7 @@ maactl [global flags] <group> [subcommand] [arguments] [flags]
 - **同一对象的所有查询都在同一个分组里**：资源声明的 `list` 与已加载资源的 `inspect/nodes/hash`
   都在 `resource` 下（第一版把 `pi resources` 放在 pi、把 `resource inspect` 放在最后，已修正）。
 - `pi` 保留别名 `interface`；它不再接受 `--show` 之类的动作开关。
-- `device adb` / `device win32` 取代旧的 `adb devices` / `win32 devices`；旧命令隐藏保留一版，
+- `device adb` / `device window` 取代旧的 `adb devices` / `win32 devices`；旧命令隐藏保留一版，
   调用时打印迁移提示。
 - `run -t/-n` 是纯便捷形式，与子命令语义完全一致；`run preset` 没有短参数，因为 `-p`/`--preset`
   已经是「把预设取值应用到单个 task」的执行选项。
@@ -153,6 +153,9 @@ maactl [global flags] <group> [subcommand] [arguments] [flags]
 | 目标 | `-ap` | `--adb-path <path>` | 覆盖 ADB 可执行文件路径 |
 | 目标 | `-wh` `-wc` `-ww` | `--win32-handle/class/window` | Win32 窗口选择（默认：配置文件 → PI `win32` 正则 → 唯一窗口） |
 | 目标 | `-ws` `-wm` `-wk` | `--win32-screencap/mouse/keyboard` | 覆盖 Win32 截图/输入方式 |
+| 目标 | `-mw` `-mid` `-ms` `-mi` | `--macos-window/window-id/screencap/input` | macOS 窗口选择与方式 |
+| 目标 | `-pca` `-pcu` | `--playcover-address/uuid` | PlayCover（macOS）服务地址与应用标识 |
+| 目标 | `-ls` `-lv` | `--linux-socket/vk` | Linux（wlroots）Wayland socket 与按键码类型 |
 | 目标 | `-gt` | `--gamepad-type <Xbox360\|DualShock4>` | 虚拟手柄类型 |
 | 配置项 | `-opt` | `--option <name>=<value>` | 设置配置项取值；可重复（语法见 §7） |
 | 配置项 | `-of` | `--option-file <path>` | 配置项取值 JSON 文件（结构同 `preset.task[].option`） |
@@ -378,6 +381,9 @@ run (r): 运行 task、preset 或节点
 | `resource` | 默认资源名 |
 | `adb.address` / `adb.adb_path` / `adb.screencap` / `adb.input` | ADB 连接默认值 |
 | `win32.*` | Win32 窗口选择与方式默认值 |
+| `macos.*` | macOS 窗口选择与方式默认值 |
+| `playcover.*` | PlayCover 服务地址与应用标识 |
+| `linux.*` | Linux（wlroots）Wayland socket 等 |
 | `option` | 全局配置项取值（结构同 §7.5 的严格 JSON） |
 | `task[].name` + `task[].option` | 按任务保存的配置项取值 |
 | `task[].enabled` | 任务勾选状态（`run preset` 时作为补充） |
@@ -443,7 +449,7 @@ run (r): 运行 task、preset 或节点
 | `maactl interface --resources` | `maactl resource list`（`maactl resource l`） |
 | `maactl interface --options/--presets` | `maactl pi options/presets` |
 | `maactl adb devices` | `maactl device adb`（旧命令保留迁移提示） |
-| `maactl win32 devices` | `maactl device win32` |
+| `maactl win32 devices` | `maactl device window` |
 | `maactl resource -i` / `resource -n` | `maactl resource inspect` / `resource nodes` |
 | `maactl run task <name>` / `run -t` | 不变 |
 | `maactl run node <name>` / `run -n` | 不变 |

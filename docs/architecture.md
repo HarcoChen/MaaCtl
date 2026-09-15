@@ -4,25 +4,28 @@
 cmd/maactl/            程序入口（main 包：解析参数、把 ExitError 映射为退出码）
 internal/
   cli/                 命令树：root、pi、pi_options、resource、device、run、execute、
-                       config、controller、agent、exit、aliases
+                       config、controller、window、agent、exit、aliases
   pi/                  ProjectInterface v2 模型、加载与 import 合并、i18n、校验、
                        option 求值、Pipeline 合并、按键码表
+  platform/            MaaFramework 发布平台（win/linux/macos × x86_64/aarch64）：
+                       平台 id、运行库文件名、可执行文件后缀、可执行文件头架构探测
   clientconfig/        客户端配置（maa_pi_config.json）读取与发现
   event/               sink 事件输出、focus 模板与 display 渠道过滤
   help/                帮助渲染器（按用途分组的选项、短别名、声明顺序）
   i18n/                帮助语言检测与本地化文本
   maafw/               MaaFramework 运行库定位与初始化
-    pack/              从 MaaFramework release 压缩包生成内嵌 payload
+    pack/              从本地 MaaFramework 运行库目录生成内嵌 payload
     bundled/           内嵌 payload 的编译期承载与运行期解包
   output/              文本与 JSON 输出辅助
   table/               终端宽度对齐的表格渲染
-tools/packmaafw/       打包工具：下载/解包 release，只取 bin/ 生成 payload
-assets/                下载的 MaaFramework release 压缩包（不入库）
+tools/packmaafw/       打包工具：只读 maafw/bin，生成 payload（不联网）
 maafw.version          本项目使用的 MaaFramework 版本
 npm/                   npm 分发包：npx maactl / npm i -g maactl 的参数转发器
-tests/                 跨包测试（CLI 端到端、PI 加载/合并/求值/校验、打包）
+.github/scripts/       CI 脚本：fetch_maafw.py（下载并解包 release）、
+                       build_release.py（构建 + 验签 + 打包一个平台）、release.py（tag 与更新日志）
+tests/                 跨包测试（CLI 端到端、PI 加载/合并/求值/校验、打包、平台探测）
 docs/                  设计文档
-maafw/                 本地 MaaFramework 运行库（不入库）
+maafw/                 本地 MaaFramework 运行库（不入库，CI 在每个平台上解包 release 到这里）
 ```
 
 `internal/` 内的包只在本模块可用；`tests/` 通过 `internal/cli` 等导出接口运行 CLI，
@@ -41,6 +44,16 @@ maafw/                 本地 MaaFramework 运行库（不入库）
 | `pipeline.go` | Pipeline override 合并与模板替换（整串占位符保留类型） |
 | `plan.go` | `pi options` 的只读配置项树 |
 | `hotkey.go` | 快捷键字符串解析与 Adb/Win32 虚拟按键码映射 |
+
+## 平台差异
+
+平台相关的东西集中在三处，其余代码与平台无关：
+
+| 位置 | 内容 |
+| --- | --- |
+| `internal/platform` | 平台 id、运行库文件名（dll/so/dylib）、`.exe` 后缀、从 PE/ELF/Mach-O 头读架构 |
+| `internal/pi/lookup.go` | `RunnableControllerTypes()`：各平台能创建的控制器类型（Windows `Win32`/`Gamepad`，macOS `MacOS`/`PlayCover`，Linux `Linux`，全平台 `Adb`） |
+| `internal/cli/controller.go` | 各控制器类型的构造与参数解析；不支持的组合在调用 MaaFramework 之前就报错 |
 
 ## 命令与短别名
 
