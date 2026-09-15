@@ -26,6 +26,7 @@ type runOptions struct {
 	optionValues, overlay            []string
 	events                           string
 	stopAfter                        time.Duration
+	stopTimeout                      time.Duration
 	noAgent                          bool
 	agentLog                         string
 }
@@ -76,6 +77,7 @@ func plannedRunCommand(use, short string) *cobra.Command {
 }
 
 func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
+	flags.DurationVar(&opt.stopTimeout, "stop-timeout", 8*time.Second, i18n.Text("maximum wait for task and stop job completion", "等待原任务和停止任务结束的最长时间"))
 	flags.StringVarP(&opt.resource, "resource", "r", "", i18n.Text("PI resource name (default: first compatible resource)", "PI 资源名称（默认：第一个兼容资源）"))
 	flags.StringVarP(&opt.controller, "controller", "c", "", i18n.Text("PI controller name (default: only controller)", "PI 控制器名称（默认：唯一的控制器）"))
 	flags.StringVarP(&opt.adbAddress, "adb-address", "a", "", i18n.Text("ADB device serial/address (default: only detected device)", "ADB 设备序列号/地址（默认：唯一检测到的设备）"))
