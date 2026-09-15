@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -16,6 +17,12 @@ const (
 	LayerResource   Layer = "resource.option"
 	LayerController Layer = "controller.option"
 	LayerTask       Layer = "task.option"
+	// LayerStandalone marks an option evaluated on its own, outside the merge
+	// layers: the pretask argument path.
+	LayerStandalone Layer = "standalone"
+	// LayerReferenced marks an option `pi options --all` lists because no layer
+	// references it.
+	LayerReferenced Layer = "option"
 )
 
 // ValueSource records where a concrete option value came from.
@@ -238,7 +245,7 @@ func (l *Loaded) ResolveOption(name string, req Request) (any, error) {
 		r.lookupEnv = os.LookupEnv
 	}
 	r.layers = r.valueLayers()
-	if err := r.resolveOption(name, "standalone", nil, "", 0); err != nil {
+	if err := r.resolveOption(name, LayerStandalone, nil, "", 0); err != nil {
 		return nil, err
 	}
 	for _, selection := range r.selections {
@@ -276,23 +283,32 @@ type layerOptions struct {
 	names []string
 }
 
+// optionLayers lists the option names each PI layer contributes, in the
+// protocol's merge order: global_option → resource.option → controller.option →
+// task.option. A resource/controller layer is included only when its name is
+// the selected one, and the task layer only when a task is selected.
+func (l *Loaded) optionLayers(controllerName, resName string, task *Task) []layerOptions {
+	layers := []layerOptions{{LayerGlobal, l.GlobalOption}}
+	for i := range l.Resource {
+		if l.Resource[i].Name == resName {
+			layers = append(layers, layerOptions{LayerResource, l.Resource[i].Option})
+		}
+	}
+	for i := range l.Controller {
+		if l.Controller[i].Name == controllerName {
+			layers = append(layers, layerOptions{LayerController, l.Controller[i].Option})
+		}
+	}
+	if task != nil {
+		layers = append(layers, layerOptions{LayerTask, task.Option})
+	}
+	return layers
+}
+
 func (r *resolver) resolve() error {
 	r.layers = r.valueLayers()
 
-	// Protocol merge order: global_option → resource.option → controller.option
-	// → task.option.
-	var layers []layerOptions
-	layers = append(layers, layerOptions{LayerGlobal, r.project.GlobalOption})
-	if resource := r.selectedResource(); resource != nil {
-		layers = append(layers, layerOptions{LayerResource, resource.Option})
-	}
-	if controller := r.selectedController(); controller != nil {
-		layers = append(layers, layerOptions{LayerController, controller.Option})
-	}
-	if r.req.Task != nil {
-		layers = append(layers, layerOptions{LayerTask, r.req.Task.Option})
-	}
-	for _, layer := range layers {
+	for _, layer := range r.project.optionLayers(r.req.ControllerName, r.req.ResourceName, r.req.Task) {
 		for _, name := range layer.names {
 			if err := r.resolveOption(name, layer.layer, nil, "", 0); err != nil {
 				return err
@@ -342,19 +358,6 @@ func (r *resolver) selectedController() *Controller {
 	return nil
 }
 
-// selectedResource returns the PI resource the request refers to.
-func (r *resolver) selectedResource() *Resource {
-	if r.req.ResourceName == "" {
-		return nil
-	}
-	for i := range r.project.Resource {
-		if r.project.Resource[i].Name == r.req.ResourceName {
-			return &r.project.Resource[i]
-		}
-	}
-	return nil
-}
-
 // resolveOption evaluates one option and, when selected, its nested options.
 func (r *resolver) resolveOption(name string, layer Layer, parent *optionPath, parentName string, depth int) error {
 	option, ok := r.project.Option.Get(name)
@@ -372,9 +375,6 @@ func (r *resolver) resolveOption(name string, layer Layer, parent *optionPath, p
 
 	value, source, provided := r.valueFor(name)
 	selection := Selection{Name: name, Layer: layer, Source: source, Parent: parentName, Depth: depth}
-	if !provided {
-		selection.Source = SourceDefault
-	}
 	label := fmt.Sprintf("%s %s", layer, name)
 
 	switch option.Kind() {
@@ -414,16 +414,16 @@ func (r *resolver) resolveOption(name string, layer Layer, parent *optionPath, p
 		selection.Inputs = values
 		selection.Secrets = secrets
 		r.selections = append(r.selections, selection)
-		return r.applyTemplate(option, placeholders, label)
+		return r.addSubstituted(option, placeholders, label)
 
 	case OptionTypeHotkey:
-		values, err := r.hotkeyValues(option, value, provided)
+		hotkey, err := r.hotkeyValues(option, value, provided)
 		if err != nil {
 			return err
 		}
-		selection.Inputs = values
+		selection.Inputs = hotkey.values
 		r.selections = append(r.selections, selection)
-		return r.applyHotkey(option, values, label)
+		return r.addSubstituted(option, hotkey.placeholders, label)
 
 	default:
 		return fmt.Errorf("option %q has unsupported type %q", name, option.Type)
@@ -476,48 +476,11 @@ func (r *resolver) applyCase(option *Option, chosen *OptionCase, layer Layer, pa
 	return nil
 }
 
-// applyTemplate substitutes an input option's template with its typed values.
-func (r *resolver) applyTemplate(option *Option, values map[string]placeholder, label string) error {
+// addSubstituted converts an option's pipeline_override into a Pipeline,
+// substitutes its placeholders, and records the contribution under label.
+func (r *resolver) addSubstituted(option *Option, placeholders map[string]placeholder, label string) error {
 	if option.Override == nil {
 		return nil
-	}
-	fragment, err := toPipeline(option.Override, fmt.Sprintf("option %q pipeline_override", option.Name))
-	if err != nil {
-		return err
-	}
-	substituted, err := substituteTemplates(fragment, values)
-	if err != nil {
-		return err
-	}
-	result, ok := substituted.(map[string]any)
-	if !ok {
-		return fmt.Errorf("option %q pipeline_override: expected an object", option.Name)
-	}
-	r.addContribution(label, r.sourceFor(option.Name), result)
-	return nil
-}
-
-// applyHotkey substitutes a hotkey option's template with virtual key codes.
-func (r *resolver) applyHotkey(option *Option, values map[string]string, label string) error {
-	if option.Override == nil {
-		return nil
-	}
-	placeholders := map[string]placeholder{}
-	for _, field := range option.Hotkeys {
-		raw, ok := values[field.Name]
-		if !ok {
-			continue
-		}
-		codes, text, err := r.hotkeyCodes(raw)
-		if err != nil {
-			return fmt.Errorf("option %q field %q: %w", option.Name, field.Name, err)
-		}
-		placeholders[field.Name] = placeholder{text: text, typed: codes.Primary}
-		placeholders[field.Name+".primary"] = placeholder{text: text, typed: codes.Primary}
-		for i, code := range codes.Modifiers {
-			name := fmt.Sprintf("%s.modifier%d", field.Name, i+1)
-			placeholders[name] = placeholder{text: text, typed: code}
-		}
 	}
 	fragment, err := toPipeline(option.Override, fmt.Sprintf("option %q pipeline_override", option.Name))
 	if err != nil {
@@ -713,14 +676,21 @@ func (r *resolver) resolveFieldValue(option *Option, field OptionInput, raw any,
 	return text, nil
 }
 
-// hotkeyValues resolves a hotkey option's fields and validates them against the
-// selected controller.
-func (r *resolver) hotkeyValues(option *Option, value any, provided bool) (map[string]string, error) {
+// hotkeySelection is a hotkey option's resolved field values together with the
+// placeholder table its pipeline_override is substituted with.
+type hotkeySelection struct {
+	values       map[string]string
+	placeholders map[string]placeholder
+}
+
+// hotkeyValues resolves a hotkey option's fields, validates them against the
+// selected controller, and builds the placeholder table addSubstituted uses.
+func (r *resolver) hotkeyValues(option *Option, value any, provided bool) (hotkeySelection, error) {
 	raw := map[string]any{}
 	if provided {
 		object, err := coerceStringMap(value)
 		if err != nil {
-			return nil, fmt.Errorf("option %q: %w", option.Name, err)
+			return hotkeySelection{}, fmt.Errorf("option %q: %w", option.Name, err)
 		}
 		raw = object
 	}
@@ -729,7 +699,7 @@ func (r *resolver) hotkeyValues(option *Option, value any, provided bool) (map[s
 		if text, ok := raw[field.Name]; ok {
 			coerced, err := coerceString(text)
 			if err != nil {
-				return nil, fmt.Errorf("option %q field %q: %w", option.Name, field.Name, err)
+				return hotkeySelection{}, fmt.Errorf("option %q field %q: %w", option.Name, field.Name, err)
 			}
 			values[field.Name] = coerced
 			continue
@@ -738,14 +708,21 @@ func (r *resolver) hotkeyValues(option *Option, value any, provided bool) (map[s
 			values[field.Name] = field.Default
 			continue
 		}
-		return nil, fmt.Errorf("option %q: hotkey field %q has no default; provide --option %s.%s=<hotkey>", option.Name, field.Name, option.Name, field.Name)
+		return hotkeySelection{}, fmt.Errorf("option %q: hotkey field %q has no default; provide --option %s.%s=<hotkey>", option.Name, field.Name, option.Name, field.Name)
 	}
+	placeholders := map[string]placeholder{}
 	for _, field := range option.Hotkeys {
-		if _, _, err := r.hotkeyCodes(values[field.Name]); err != nil {
-			return nil, fmt.Errorf("option %q field %q: %w", option.Name, field.Name, err)
+		codes, text, err := r.hotkeyCodes(values[field.Name])
+		if err != nil {
+			return hotkeySelection{}, fmt.Errorf("option %q field %q: %w", option.Name, field.Name, err)
+		}
+		placeholders[field.Name] = placeholder{text: text, typed: codes.Primary}
+		placeholders[field.Name+".primary"] = placeholder{text: text, typed: codes.Primary}
+		for i, code := range codes.Modifiers {
+			placeholders[fmt.Sprintf("%s.modifier%d", field.Name, i+1)] = placeholder{text: text, typed: code}
 		}
 	}
-	return values, nil
+	return hotkeySelection{values: values, placeholders: placeholders}, nil
 }
 
 // valueFor returns the value for name from the highest-priority layer that has
@@ -825,7 +802,7 @@ func coerceString(value any) (string, error) {
 		}
 		return "No", nil
 	case float64:
-		return strings.TrimSuffix(fmt.Sprintf("%v", v), ".0"), nil
+		return strconv.FormatFloat(v, 'f', -1, 64), nil
 	case int:
 		return fmt.Sprintf("%d", v), nil
 	case int64:

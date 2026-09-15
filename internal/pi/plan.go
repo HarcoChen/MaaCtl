@@ -28,24 +28,7 @@ type OptionPlanEntry struct {
 // are omitted entirely. With all=true they are included and marked inactive so
 // `pi options --all` can explain the filtering.
 func (l *Loaded) OptionPlan(controllerName, resName string, task *Task, all bool) []OptionPlanEntry {
-	type layerOptions struct {
-		layer Layer
-		names []string
-	}
-	layers := []layerOptions{{LayerGlobal, l.GlobalOption}}
-	for i := range l.Resource {
-		if l.Resource[i].Name == resName {
-			layers = append(layers, layerOptions{LayerResource, l.Resource[i].Option})
-		}
-	}
-	for i := range l.Controller {
-		if l.Controller[i].Name == controllerName {
-			layers = append(layers, layerOptions{LayerController, l.Controller[i].Option})
-		}
-	}
-	if task != nil {
-		layers = append(layers, layerOptions{LayerTask, task.Option})
-	}
+	layers := l.optionLayers(controllerName, resName, task)
 
 	var entries []OptionPlanEntry
 	for _, layer := range layers {
@@ -148,7 +131,7 @@ func (l *Loaded) planUnreferenced(controllerName, resName string, task *Task) []
 		}
 		option, _ := l.Option.Get(name)
 		active := OptionActive(option, controllerName, resName)
-		entry := OptionPlanEntry{Layer: "option", Name: name, Option: option, Active: active}
+		entry := OptionPlanEntry{Layer: LayerReferenced, Name: name, Option: option, Active: active}
 		if !active {
 			entry.Reason = "not referenced by any layer"
 		}
@@ -158,7 +141,7 @@ func (l *Loaded) planUnreferenced(controllerName, resName string, task *Task) []
 		path := &optionPath{name: name}
 		for i := range option.Cases {
 			for _, child := range option.Cases[i].Option {
-				entries = append(entries, l.planOption(child, "option", name, controllerName, resName, path, 1, active, true)...)
+				entries = append(entries, l.planOption(child, LayerReferenced, name, controllerName, resName, path, 1, active, true)...)
 			}
 		}
 	}

@@ -181,6 +181,16 @@ func TestResolveFieldValueReportsMissingEnv(t *testing.T) {
 	}
 }
 
+// TestCoerceStringNumbers pins the plain decimal rendering of a JSON number:
+// the placeholder text of a numeric value must not carry an exponent or a
+// trailing ".0".
+func TestCoerceStringNumbers(t *testing.T) {
+	text, err := coerceString(float64(4))
+	if err != nil || text != "4" {
+		t.Errorf("coerceString(float64(4)) = %q, %v; want \"4\"", text, err)
+	}
+}
+
 // TestHotkeyValuesRequiresDefault covers a hotkey field with neither a value nor
 // a default.
 func TestHotkeyValuesRequiresDefault(t *testing.T) {

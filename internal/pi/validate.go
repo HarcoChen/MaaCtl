@@ -62,6 +62,15 @@ func (r *Report) warnf(path, format string, args ...any) {
 	r.Issues = append(r.Issues, Issue{Level: LevelWarning, Path: path, Message: fmt.Sprintf(format, args...)})
 }
 
+// reportf records an issue at the given level.
+func (r *Report) reportf(level IssueLevel, path, format string, args ...any) {
+	if level == LevelWarning {
+		r.warnf(path, format, args...)
+		return
+	}
+	r.errorf(path, format, args...)
+}
+
 // ValidateOptions controls how much Validate enforces.
 type ValidateOptions struct {
 	// Strict turns advisory findings (unrunnable controllers, missing resource
@@ -77,17 +86,70 @@ type ValidateOptions struct {
 // exist on disk.
 func (l *Loaded) Validate(opts ValidateOptions) *Report {
 	r := &Report{Strict: opts.Strict}
+	known := newNameIndex(l)
 	l.validateNames(r)
 	l.validateControllers(r, opts)
-	l.validateResources(r, opts)
+	l.validateResources(r, opts, known)
 	l.validateGroups(r)
-	l.validateTasks(r)
-	l.validateOptions(r)
+	l.validateTasks(r, known)
+	l.validateOptions(r, known)
 	l.validatePresets(r)
 	l.validateSettings(r)
-	l.validatePretasks(r)
+	l.validatePretasks(r, known)
 	l.validateLanguages(r, opts)
 	return r
+}
+
+// nameIndex caches the names declared at the ProjectInterface top level, so the
+// reference checks do not rescan every list.
+type nameIndex struct {
+	controllers map[string]bool
+	resources   map[string]bool
+	groups      map[string]bool
+}
+
+// newNameIndex builds the name index of l.
+func newNameIndex(l *Loaded) nameIndex {
+	return nameIndex{
+		controllers: nameSet(namesOf(l.Controller, func(c Controller) string { return c.Name })),
+		resources:   nameSet(namesOf(l.Resource, func(r Resource) string { return r.Name })),
+		groups:      nameSet(namesOf(l.Group, func(g Group) string { return g.Name })),
+	}
+}
+
+// nameSet indexes names for membership tests.
+func nameSet(names []string) map[string]bool {
+	set := make(map[string]bool, len(names))
+	for _, name := range names {
+		set[name] = true
+	}
+	return set
+}
+
+// refs reports every name a declaration references that the ProjectInterface
+// does not define, at the given issue level.
+func refs(r *Report, level IssueLevel, pathPrefix, kind string, names []string, known map[string]bool) {
+	for i, name := range names {
+		if !known[name] {
+			r.reportf(level, fmt.Sprintf("%s[%d]", pathPrefix, i), "references %s %q, which is not defined", kind, name)
+		}
+	}
+}
+
+// optionRef reports one option reference that the `option` section does not
+// define, at the given path.
+func (l *Loaded) optionRef(r *Report, path, name string) {
+	if _, ok := l.Option.Get(name); !ok {
+		r.errorf(path, "references option %q, which is not defined in `option`", name)
+	}
+}
+
+// optionRefs reports every option reference a declaration makes, addressed by
+// position, that the `option` section does not define.
+func (l *Loaded) optionRefs(r *Report, pathPrefix string, names []string) {
+	for i, name := range names {
+		l.optionRef(r, fmt.Sprintf("%s[%d]", pathPrefix, i), name)
+	}
 }
 
 // validateNames reports duplicate identifiers in every list keyed by name.
@@ -106,36 +168,12 @@ func (l *Loaded) validateNames(r *Report) {
 			seen[name] = i
 		}
 	}
-	controllerNames := make([]string, len(l.Controller))
-	for i := range l.Controller {
-		controllerNames[i] = l.Controller[i].Name
-	}
-	check("controller", controllerNames)
-	resourceNames := make([]string, len(l.Resource))
-	for i := range l.Resource {
-		resourceNames[i] = l.Resource[i].Name
-	}
-	check("resource", resourceNames)
-	taskNames := make([]string, len(l.Task))
-	for i := range l.Task {
-		taskNames[i] = l.Task[i].Name
-	}
-	check("task", taskNames)
-	groupNames := make([]string, len(l.Group))
-	for i := range l.Group {
-		groupNames[i] = l.Group[i].Name
-	}
-	check("group", groupNames)
-	presetNames := make([]string, len(l.Preset))
-	for i := range l.Preset {
-		presetNames[i] = l.Preset[i].Name
-	}
-	check("preset", presetNames)
-	settingNames := make([]string, len(l.Setting))
-	for i := range l.Setting {
-		settingNames[i] = l.Setting[i].Name
-	}
-	check("setting", settingNames)
+	check("controller", namesOf(l.Controller, func(c Controller) string { return c.Name }))
+	check("resource", namesOf(l.Resource, func(res Resource) string { return res.Name }))
+	check("task", namesOf(l.Task, func(t Task) string { return t.Name }))
+	check("group", namesOf(l.Group, func(g Group) string { return g.Name }))
+	check("preset", namesOf(l.Preset, func(p Preset) string { return p.Name }))
+	check("setting", namesOf(l.Setting, func(s Setting) string { return s.Name }))
 }
 
 // validateControllers checks controller types and platform support.
@@ -154,11 +192,7 @@ func (l *Loaded) validateControllers(r *Report, opts ValidateOptions) {
 		default:
 			r.errorf(path+".type", "unknown controller type %q", ctrl.Type)
 		}
-		for j, name := range ctrl.Option {
-			if _, ok := l.Option.Get(name); !ok {
-				r.errorf(fmt.Sprintf("%s.option[%d]", path, j), "references option %q, which is not defined in `option`", name)
-			}
-		}
+		l.optionRefs(r, path+".option", ctrl.Option)
 		if !opts.SkipFiles {
 			for j, p := range ctrl.AttachResourcePath {
 				if _, err := os.Stat(resolveRelative(l.Dir, p)); err != nil {
@@ -170,11 +204,7 @@ func (l *Loaded) validateControllers(r *Report, opts ValidateOptions) {
 }
 
 // validateResources checks resource paths, controller references, and options.
-func (l *Loaded) validateResources(r *Report, opts ValidateOptions) {
-	knownControllers := map[string]bool{}
-	for i := range l.Controller {
-		knownControllers[l.Controller[i].Name] = true
-	}
+func (l *Loaded) validateResources(r *Report, opts ValidateOptions, known nameIndex) {
 	for i := range l.Resource {
 		res := &l.Resource[i]
 		path := fmt.Sprintf("resource[%d]", i)
@@ -188,16 +218,8 @@ func (l *Loaded) validateResources(r *Report, opts ValidateOptions) {
 				}
 			}
 		}
-		for j, name := range res.Controller {
-			if !knownControllers[name] {
-				r.errorf(fmt.Sprintf("%s.controller[%d]", path, j), "references controller %q, which is not defined", name)
-			}
-		}
-		for j, name := range res.Option {
-			if _, ok := l.Option.Get(name); !ok {
-				r.errorf(fmt.Sprintf("%s.option[%d]", path, j), "references option %q, which is not defined in `option`", name)
-			}
-		}
+		refs(r, LevelError, path+".controller", "controller", res.Controller, known.controllers)
+		l.optionRefs(r, path+".option", res.Option)
 	}
 }
 
@@ -211,63 +233,31 @@ func (l *Loaded) validateGroups(r *Report) {
 }
 
 // validateTasks checks task references, groups, and entries.
-func (l *Loaded) validateTasks(r *Report) {
-	knownControllers := map[string]bool{}
-	for i := range l.Controller {
-		knownControllers[l.Controller[i].Name] = true
-	}
-	knownResources := map[string]bool{}
-	for i := range l.Resource {
-		knownResources[l.Resource[i].Name] = true
-	}
-	knownGroups := map[string]bool{}
-	for i := range l.Group {
-		knownGroups[l.Group[i].Name] = true
-	}
+func (l *Loaded) validateTasks(r *Report, known nameIndex) {
 	for i := range l.Task {
 		task := &l.Task[i]
 		path := fmt.Sprintf("task[%d]", i)
 		if strings.TrimSpace(task.Entry) == "" {
 			r.errorf(path+".entry", "entry node is required")
 		}
-		for j, name := range task.Resource {
-			if !knownResources[name] {
-				r.errorf(fmt.Sprintf("%s.resource[%d]", path, j), "references resource %q, which is not defined", name)
-			}
-		}
-		for j, name := range task.Controller {
-			if !knownControllers[name] {
-				r.errorf(fmt.Sprintf("%s.controller[%d]", path, j), "references controller %q, which is not defined", name)
-			}
-		}
+		refs(r, LevelError, path+".resource", "resource", task.Resource, known.resources)
+		refs(r, LevelError, path+".controller", "controller", task.Controller, known.controllers)
 		for j, name := range task.Group {
-			if !knownGroups[name] {
+			if !known.groups[name] {
 				r.warnf(fmt.Sprintf("%s.group[%d]", path, j), "references group %q, which is not declared at the top level", name)
 			}
 		}
-		for j, name := range task.Option {
-			if _, ok := l.Option.Get(name); !ok {
-				r.errorf(fmt.Sprintf("%s.option[%d]", path, j), "references option %q, which is not defined in `option`", name)
-			}
-		}
+		l.optionRefs(r, path+".option", task.Option)
 	}
 }
 
 // validateOptions checks every option definition and its case children.
-func (l *Loaded) validateOptions(r *Report) {
+func (l *Loaded) validateOptions(r *Report, known nameIndex) {
 	for _, name := range l.Option.Names() {
 		option, _ := l.Option.Get(name)
 		path := fmt.Sprintf("option.%s", name)
-		for j, ctrl := range option.Controller {
-			if !l.hasController(ctrl) {
-				r.warnf(fmt.Sprintf("%s.controller[%d]", path, j), "references controller %q, which is not defined", ctrl)
-			}
-		}
-		for j, res := range option.Resource {
-			if !l.hasResource(res) {
-				r.warnf(fmt.Sprintf("%s.resource[%d]", path, j), "references resource %q, which is not defined", res)
-			}
-		}
+		refs(r, LevelWarning, path+".controller", "controller", option.Controller, known.controllers)
+		refs(r, LevelWarning, path+".resource", "resource", option.Resource, known.resources)
 		switch option.Kind() {
 		case OptionTypeSelect, OptionTypeCheckbox, OptionTypeSwitch:
 			if len(option.Cases) == 0 {
@@ -283,11 +273,7 @@ func (l *Loaded) validateOptions(r *Report) {
 					r.errorf(casePath+".name", "duplicate case name %q", item.Name)
 				}
 				seen[item.Name] = true
-				for k, child := range item.Option {
-					if _, ok := l.Option.Get(child); !ok {
-						r.errorf(fmt.Sprintf("%s.option[%d]", casePath, k), "references option %q, which is not defined in `option`", child)
-					}
-				}
+				l.optionRefs(r, casePath+".option", item.Option)
 			}
 			if option.Kind() == OptionTypeSwitch {
 				l.validateSwitchCases(r, path, option)
@@ -344,11 +330,7 @@ func (l *Loaded) validateOptions(r *Report) {
 			r.errorf(path+".type", "unsupported option type %q", option.Type)
 		}
 	}
-	for i, name := range l.GlobalOption {
-		if _, ok := l.Option.Get(name); !ok {
-			r.errorf(fmt.Sprintf("global_option[%d]", i), "references option %q, which is not defined in `option`", name)
-		}
-	}
+	l.optionRefs(r, "global_option", l.GlobalOption)
 }
 
 // validateSwitchCases enforces the protocol's two-case Yes/No rule for switches.
@@ -423,9 +405,7 @@ func (l *Loaded) validatePresets(r *Report) {
 				r.errorf(path+".name", "references task %q, which is not defined", entry.Name)
 			}
 			for optionName := range entry.Option {
-				if _, ok := l.Option.Get(optionName); !ok {
-					r.errorf(path+".option."+optionName, "references option %q, which is not defined in `option`", optionName)
-				}
+				l.optionRef(r, path+".option."+optionName, optionName)
 			}
 		}
 	}
@@ -434,36 +414,20 @@ func (l *Loaded) validatePresets(r *Report) {
 // validateSettings checks setting sections and their option lists.
 func (l *Loaded) validateSettings(r *Report) {
 	for i := range l.Setting {
-		for j, name := range l.Setting[i].Option {
-			if _, ok := l.Option.Get(name); !ok {
-				r.errorf(fmt.Sprintf("setting[%d].option[%d]", i, j), "references option %q, which is not defined in `option`", name)
-			}
-		}
+		l.optionRefs(r, fmt.Sprintf("setting[%d].option", i), l.Setting[i].Option)
 	}
 }
 
 // validatePretasks checks pretask identifiers and option references.
-func (l *Loaded) validatePretasks(r *Report) {
+func (l *Loaded) validatePretasks(r *Report, known nameIndex) {
 	for i := range l.Pretask {
 		pretask := &l.Pretask[i]
 		if strings.TrimSpace(pretask.Exec) == "" {
 			r.errorf(fmt.Sprintf("pretask[%d].exec", i), "exec is required")
 		}
-		for j, name := range pretask.Option {
-			if _, ok := l.Option.Get(name); !ok {
-				r.errorf(fmt.Sprintf("pretask[%d].option[%d]", i, j), "references option %q, which is not defined in `option`", name)
-			}
-		}
-		for j, name := range pretask.Resource {
-			if !l.hasResource(name) {
-				r.warnf(fmt.Sprintf("pretask[%d].resource[%d]", i, j), "references resource %q, which is not defined", name)
-			}
-		}
-		for j, name := range pretask.Controller {
-			if !l.hasController(name) {
-				r.warnf(fmt.Sprintf("pretask[%d].controller[%d]", i, j), "references controller %q, which is not defined", name)
-			}
-		}
+		l.optionRefs(r, fmt.Sprintf("pretask[%d].option", i), pretask.Option)
+		refs(r, LevelWarning, fmt.Sprintf("pretask[%d].resource", i), "resource", pretask.Resource, known.resources)
+		refs(r, LevelWarning, fmt.Sprintf("pretask[%d].controller", i), "controller", pretask.Controller, known.controllers)
 	}
 }
 
@@ -482,26 +446,6 @@ func (l *Loaded) validateLanguages(r *Report, opts ValidateOptions) {
 			r.warnf("languages."+code, "language file %q does not exist", file)
 		}
 	}
-}
-
-// hasController reports whether a controller name is declared.
-func (l *Loaded) hasController(name string) bool {
-	for i := range l.Controller {
-		if l.Controller[i].Name == name {
-			return true
-		}
-	}
-	return false
-}
-
-// hasResource reports whether a resource name is declared.
-func (l *Loaded) hasResource(name string) bool {
-	for i := range l.Resource {
-		if l.Resource[i].Name == name {
-			return true
-		}
-	}
-	return false
 }
 
 // isKnownControllerType reports whether name is one of the protocol's types.

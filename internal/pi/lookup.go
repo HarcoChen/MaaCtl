@@ -1,7 +1,6 @@
 package pi
 
 import (
-	"bytes"
 	"fmt"
 	"runtime"
 	"strings"
@@ -114,11 +113,7 @@ func (l *Loaded) FindPreset(name string, lang ...string) (*Preset, error) {
 			return &l.Preset[i], nil
 		}
 	}
-	names := make([]string, len(l.Preset))
-	for i := range l.Preset {
-		names[i] = l.Preset[i].Name
-	}
-	return nil, fmt.Errorf("preset %q not found; available: %s", name, Join(names))
+	return nil, fmt.Errorf("preset %q not found; available: %s", name, joinNames(l.Preset, func(p Preset) string { return p.Name }))
 }
 
 // TaskReasons lists why a task cannot run with the given controller/resource.
@@ -208,41 +203,34 @@ func PlatformName() string {
 
 // JoinControllerNames returns the comma-separated names of controllers.
 func JoinControllerNames(items []Controller) string {
-	names := make([]string, len(items))
-	for i := range items {
-		names[i] = items[i].Name
-	}
-	return Join(names)
+	return joinNames(items, func(c Controller) string { return c.Name })
 }
 
 // JoinResourceNames returns the comma-separated names of resources.
 func JoinResourceNames(items []Resource) string {
-	names := make([]string, len(items))
-	for i := range items {
-		names[i] = items[i].Name
-	}
-	return Join(names)
+	return joinNames(items, func(r Resource) string { return r.Name })
 }
 
 // JoinTaskNames returns the comma-separated names of tasks.
 func JoinTaskNames(items []Task) string {
-	names := make([]string, len(items))
-	for i := range items {
-		names[i] = items[i].Name
-	}
-	return Join(names)
+	return joinNames(items, func(t Task) string { return t.Name })
 }
 
 // Join returns items separated by ", ".
-func Join(items []string) string {
-	var b bytes.Buffer
-	for i, item := range items {
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		b.WriteString(item)
+func Join(items []string) string { return strings.Join(items, ", ") }
+
+// joinNames returns the name of every item separated by ", ".
+func joinNames[T any](items []T, name func(T) string) string {
+	return Join(namesOf(items, name))
+}
+
+// namesOf collects the name of every item.
+func namesOf[T any](items []T, name func(T) string) []string {
+	names := make([]string, len(items))
+	for i := range items {
+		names[i] = name(items[i])
 	}
-	return b.String()
+	return names
 }
 
 // firstOrEmpty returns the first element of values, or "".

@@ -454,6 +454,27 @@ func (m OptionMap) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// unmarshalOneOrMany decodes a PI field the protocol allows as either one
+// object or an array of objects. An absent or null field decodes to nil.
+func unmarshalOneOrMany[T any](data []byte) ([]T, error) {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil, nil
+	}
+	if trimmed[0] == '[' {
+		var list []T
+		if err := json.Unmarshal(data, &list); err != nil {
+			return nil, err
+		}
+		return list, nil
+	}
+	var single T
+	if err := json.Unmarshal(data, &single); err != nil {
+		return nil, err
+	}
+	return []T{single}, nil
+}
+
 // Agent describes one ProjectInterface agent: the child process that runs an
 // AgentServer and the identifier used for its socket.
 type Agent struct {
@@ -468,25 +489,9 @@ type Agents []Agent
 
 // UnmarshalJSON accepts both the single-object and the array form of `agent`.
 func (a *Agents) UnmarshalJSON(data []byte) error {
-	trimmed := bytes.TrimSpace(data)
-	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
-		*a = nil
-		return nil
-	}
-	if trimmed[0] == '[' {
-		var list []Agent
-		if err := json.Unmarshal(data, &list); err != nil {
-			return err
-		}
-		*a = list
-		return nil
-	}
-	var single Agent
-	if err := json.Unmarshal(data, &single); err != nil {
-		return err
-	}
-	*a = Agents{single}
-	return nil
+	agents, err := unmarshalOneOrMany[Agent](data)
+	*a = agents
+	return err
 }
 
 // Pretask describes one pre-controller program run before the controller
@@ -516,25 +521,9 @@ type Pretasks []Pretask
 
 // UnmarshalJSON accepts both the single-object and the array form of `pretask`.
 func (p *Pretasks) UnmarshalJSON(data []byte) error {
-	trimmed := bytes.TrimSpace(data)
-	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
-		*p = nil
-		return nil
-	}
-	if trimmed[0] == '[' {
-		var list []Pretask
-		if err := json.Unmarshal(data, &list); err != nil {
-			return err
-		}
-		*p = list
-		return nil
-	}
-	var single Pretask
-	if err := json.Unmarshal(data, &single); err != nil {
-		return err
-	}
-	*p = Pretasks{single}
-	return nil
+	pretasks, err := unmarshalOneOrMany[Pretask](data)
+	*p = pretasks
+	return err
 }
 
 // Loaded is a parsed and merged ProjectInterface together with its location.
