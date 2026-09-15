@@ -176,8 +176,34 @@ resource, or from -pa/--path.`, `节点名称直接作为任务入口。资源�
 	}
 }
 
-// addRunFlags declares the shared execution flags.
+// addRunFlags declares the shared execution flags, one function per help
+// section; each group's help section is annotated at the end of this function.
 func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
+	addTargetFlags(flags, opt)
+	addOptionFlags(flags, opt)
+	addResourceFlags(flags, opt)
+	addOutputFlags(flags, opt)
+	addControlFlags(flags, opt)
+
+	help.MarkFlagsSection(flags, help.SectionTarget,
+		"resource", "controller", "adb-address", "name", "adb-path",
+		"win32-handle", "win32-class", "win32-window", "win32-screencap", "win32-mouse", "win32-keyboard",
+		"gamepad-type",
+		"macos-window", "macos-window-id", "macos-screencap", "macos-input",
+		"playcover-address", "playcover-uuid",
+		"linux-socket", "linux-vk")
+	help.MarkFlagsSection(flags, help.SectionOptions,
+		"option", "option-file", "preset", "override", "override-file")
+	help.MarkFlagsSection(flags, help.SectionResources,
+		"path", "overlay", "require-resource-hash")
+	help.MarkFlagsSection(flags, help.SectionOutput,
+		"events", "focus-display")
+	help.MarkFlagsSection(flags, help.SectionControl,
+		"dry-run", "explain", "timeout", "stop-after", "no-agent", "agent-log", "continue-on-error")
+}
+
+// addTargetFlags declares the flags that select the controller target.
+func addTargetFlags(flags *pflag.FlagSet, opt *runOptions) {
 	flags.StringVarP(&opt.resource, "resource", "r", "", i18n.Text("PI resource (default: config, then the first compatible)", "PI 资源（默认：配置文件，其次第一个兼容资源）"))
 	flags.StringVarP(&opt.controller, "controller", "c", "", i18n.Text("PI controller (default: config, then the only one)", "PI 控制器（默认：配置文件，其次唯一的控制器）"))
 	flags.StringVarP(&opt.adbAddress, "adb-address", "a", "", i18n.Text("ADB address (default: config, then the only device)", "ADB 地址（默认：配置文件，其次唯一设备）"))
@@ -198,39 +224,41 @@ func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
 	flags.StringVar(&opt.playcoverUUID, "playcover-uuid", "", i18n.Text("PlayCover bundle identifier (default: PI playcover.uuid, then maa.playcover)", "PlayCover 应用标识（默认：PI playcover.uuid，其次 maa.playcover）"))
 	flags.StringVar(&opt.linuxSocket, "linux-socket", "", i18n.Text("Wayland socket of the compositor (default: config, then $WAYLAND_DISPLAY)", "合成器的 Wayland socket（默认：配置，其次 $WAYLAND_DISPLAY）"))
 	flags.BoolVar(&opt.linuxVK, "linux-vk", false, i18n.Text("treat Linux key codes as Win32 virtual-key codes", "把 Linux 按键视为 Win32 Virtual-Key 键码"))
+}
+
+// addOptionFlags declares the flags that supply option and override values.
+func addOptionFlags(flags *pflag.FlagSet, opt *runOptions) {
 	flags.StringArrayVar(&opt.optionValues, "option", nil, i18n.Text("name=value, name=a,b, or name.field=value; repeatable", "name=value、name=a,b 或 name.field=value；可重复"))
 	flags.StringVar(&opt.optionFile, "option-file", "", i18n.Text("JSON file of option values", "包含配置项取值的 JSON 文件"))
 	flags.StringVarP(&opt.preset, "preset", "p", "", i18n.Text("apply this preset's values to the task", "把该 preset 的取值应用到 task"))
 	flags.StringVarP(&opt.override, "override", "o", "", i18n.Text("final Pipeline override JSON", "最终 Pipeline override JSON"))
 	flags.StringVar(&opt.overrideFile, "override-file", "", i18n.Text("file with the final Pipeline override JSON", "包含最终 Pipeline override JSON 的文件"))
+}
+
+// addResourceFlags declares the flags that describe the loaded resources.
+func addResourceFlags(flags *pflag.FlagSet, opt *runOptions) {
 	flags.StringArrayVar(&opt.overlay, "overlay", nil, i18n.Text("resource root loaded last; repeatable", "最后加载的资源根目录；可重复"))
 	flags.StringArrayVar(&opt.paths, "path", nil, i18n.Text("resource root for `run node`, replacing the PI resource", "`run node` 的资源根目录（替代 PI 资源）"))
+}
+
+// addOutputFlags declares the flags that select what run reports.
+func addOutputFlags(flags *pflag.FlagSet, opt *runOptions) {
 	flags.StringVarP(&opt.events, "events", "e", "focus", i18n.Text("focus (PI text), all (every sink event), or off", "focus（PI 文本）、all（全部 sink 事件）或 off"))
 	flags.StringVar(&opt.focusDisplay, "focus-display", "log", i18n.Text("channels: log,toast,notification,dialog,modal or all", "渠道：log,toast,notification,dialog,modal 或 all"))
+}
+
+// addControlFlags declares the flags that control how the run itself behaves.
+func addControlFlags(flags *pflag.FlagSet, opt *runOptions) {
 	flags.DurationVar(&opt.timeout, "timeout", 0, i18n.Text("stop and fail after this duration", "超过该时长后停止并失败"))
 	flags.DurationVar(&opt.stopAfter, "stop-after", 0, i18n.Text("stop after this duration and succeed (debug aid)", "运行该时长后停止并视为成功（调试用）"))
 	flags.BoolVar(&opt.dryRun, "dry-run", false, i18n.Text("resolve and print the run without connecting a controller", "只解析并打印本次运行，不连接控制器"))
 	flags.BoolVarP(&opt.explain, "explain", "x", false, i18n.Text("print selections and every override layer", "打印选择结果与每一层 override"))
+	// Shown under Resources, declared here: the declaration order is part of
+	// the command's contract.
 	flags.BoolVar(&opt.requireHash, "require-resource-hash", false, i18n.Text("fail when resource.hash does not match", "resource.hash 不匹配时失败"))
 	flags.BoolVar(&opt.noAgent, "no-agent", false, i18n.Text("do not start declared agents", "不启动声明的 agent"))
 	flags.StringVar(&opt.agentLog, "agent-log", "term", i18n.Text("term, off, or a directory for one log per agent", "term、off 或目录（每个 agent 一个日志）"))
 	flags.BoolVarP(&opt.continueOnError, "continue-on-error", "k", false, i18n.Text("keep running preset tasks after a failure", "preset 中某个 task 失败后继续"))
-
-	help.MarkFlagsSection(flags, help.SectionTarget,
-		"resource", "controller", "adb-address", "name", "adb-path",
-		"win32-handle", "win32-class", "win32-window", "win32-screencap", "win32-mouse", "win32-keyboard",
-		"gamepad-type",
-		"macos-window", "macos-window-id", "macos-screencap", "macos-input",
-		"playcover-address", "playcover-uuid",
-		"linux-socket", "linux-vk")
-	help.MarkFlagsSection(flags, help.SectionOptions,
-		"option", "option-file", "preset", "override", "override-file")
-	help.MarkFlagsSection(flags, help.SectionResources,
-		"path", "overlay", "require-resource-hash")
-	help.MarkFlagsSection(flags, help.SectionOutput,
-		"events", "focus-display")
-	help.MarkFlagsSection(flags, help.SectionControl,
-		"dry-run", "explain", "timeout", "stop-after", "no-agent", "agent-log", "continue-on-error")
 }
 
 // preparedRun is everything needed to execute one entry: the selected entities,

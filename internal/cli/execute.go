@@ -43,50 +43,90 @@ func (p *preparedRun) execute() error {
 		return err
 	}
 
-	res, err := p.loadResource()
+	sink := &event.Sink{JSON: p.global.JSON, Mode: mode, Display: display}
+	rt, err := p.openRuntime(sink, stopSignal)
 	if err != nil {
+		// openRuntime answers with what it managed to open before failing, so
+		// the failure unwinds exactly the steps that succeeded.
+		rt.Close()
 		return err
 	}
-	defer res.Destroy()
+	defer rt.Close()
+
+	return p.runTaskOn(rt.tasker, stopSignal)
+}
+
+// runtime is an opened MaaFramework runtime: the loaded resource, the started
+// agents, the connected controller, and the tasker the Pipeline runs on.
+type runtime struct {
+	res    *maa.Resource
+	agents []*agentProcess
+	ctrl   *maa.Controller
+	tasker *maa.Tasker
+}
+
+// Close releases what openRuntime opened, in the reverse order. It tolerates a
+// partly opened runtime, which is what the failure path returns.
+func (r *runtime) Close() {
+	if r.tasker != nil {
+		r.tasker.Destroy()
+	}
+	if r.ctrl != nil {
+		r.ctrl.Destroy()
+	}
+	stopAgents(r.agents)
+	if r.res != nil {
+		r.res.Destroy()
+	}
+}
+
+// openRuntime loads the resource, starts the declared agents, connects the
+// controller, and wires sink onto the tasker. On failure it returns the partly
+// opened runtime alongside the error, so the caller releases it with Close.
+func (p *preparedRun) openRuntime(sink *event.Sink, stopSignal <-chan os.Signal) (*runtime, error) {
+	rt := &runtime{}
+	res, err := p.loadResource()
+	if err != nil {
+		return rt, err
+	}
+	rt.res = res
 
 	agents, err := p.startAgents(res, stopSignal)
 	if err != nil {
-		return err
+		return rt, err
 	}
-	defer stopAgents(agents)
+	rt.agents = agents
 
 	ctrl, err := p.createController()
 	if err != nil {
-		return err
+		return rt, err
 	}
-	defer ctrl.Destroy()
+	rt.ctrl = ctrl
 	fmt.Fprintf(os.Stderr, "connecting controller %s\n", p.controller.Name)
 	if !ctrl.PostConnect().Wait().Success() {
-		return exitErrorf(ExitController, "connect controller %q", p.controller.Name)
+		return rt, exitErrorf(ExitController, "connect controller %q", p.controller.Name)
 	}
 
 	tasker, err := maa.NewTasker()
 	if err != nil {
-		return withExitCode(ExitInternal, fmt.Errorf("create Maa tasker: %w", err))
+		return rt, withExitCode(ExitInternal, fmt.Errorf("create Maa tasker: %w", err))
 	}
-	defer tasker.Destroy()
+	rt.tasker = tasker
 	if err := tasker.BindResource(res); err != nil {
-		return withExitCode(ExitInternal, fmt.Errorf("bind Maa resource: %w", err))
+		return rt, withExitCode(ExitInternal, fmt.Errorf("bind Maa resource: %w", err))
 	}
 	if err := tasker.BindController(ctrl); err != nil {
-		return withExitCode(ExitInternal, fmt.Errorf("bind Maa controller: %w", err))
+		return rt, withExitCode(ExitInternal, fmt.Errorf("bind Maa controller: %w", err))
 	}
 	if !tasker.Initialized() {
-		return exitErrorf(ExitInternal, "initialize Maa tasker")
+		return rt, exitErrorf(ExitInternal, "initialize Maa tasker")
 	}
 
-	sink := &event.Sink{JSON: p.global.JSON, Mode: mode, Display: display}
 	tasker.AddSink(&event.TaskerSink{Sink: sink})
 	res.AddSink(&event.ResourceSink{Sink: sink})
 	ctrl.AddSink(&event.ControllerSink{Sink: sink})
 	tasker.AddContextSink(&event.ContextSink{Sink: sink})
-
-	return p.runTaskOn(tasker, stopSignal)
+	return rt, nil
 }
 
 // initFramework loads MaaFramework, honouring --lib-dir and --log-dir.

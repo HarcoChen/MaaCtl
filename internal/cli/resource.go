@@ -9,7 +9,6 @@ import (
 	"maactl/internal/i18n"
 	"maactl/internal/output"
 	"maactl/internal/pi"
-	"maactl/internal/table"
 
 	maa "github.com/MaaXYZ/maa-framework-go/v4"
 	"github.com/spf13/cobra"
@@ -55,25 +54,21 @@ type resourceFlags struct {
 
 func newResourceListCommand(global *GlobalOptions) *cobra.Command {
 	var controllerFilter string
-	cmd := &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"l"},
-		Short:   i18n.Text("List the declared resources", "列出声明的资源"),
-		Long: i18n.Text(`Reports the resource entries declared by the ProjectInterface: their paths, hash,
+	return newPIQueryCommand(global, piQuerySpec{
+		use:     "list",
+		aliases: []string{"l"},
+		short:   i18n.Text("List the declared resources", "列出声明的资源"),
+		long: i18n.Text(`Reports the resource entries declared by the ProjectInterface: their paths, hash,
 controller restrictions, and option count. Nothing is loaded.`, `报告 ProjectInterface 声明的资源条目：路径、hash、控制器限制与选项数量。
 不会加载任何资源。`),
-		Example: `  maactl resource l -if D:\MaaMio -c Android`,
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := loadPI(global)
-			if err != nil {
-				return err
-			}
-			return listResources(cmd.OutOrStdout(), ctx, controllerFilter)
+		example: `  maactl resource l -if D:\MaaMio -c Android`,
+		flags: func(cmd *cobra.Command) {
+			cmd.Flags().StringVarP(&controllerFilter, "controller", "c", "", i18n.Text("compatibility against this controller", "按该控制器判断兼容性"))
 		},
-	}
-	cmd.Flags().StringVarP(&controllerFilter, "controller", "c", "", i18n.Text("compatibility against this controller", "按该控制器判断兼容性"))
-	return cmd
+		run: func(ctx *piContext, out io.Writer) error {
+			return listResources(out, ctx, controllerFilter)
+		},
+	})
 }
 
 // resourceRow is one row of `resource list`.
@@ -106,18 +101,15 @@ func listResources(out io.Writer, ctx *piContext, controllerFilter string) error
 			Compatible:  controllerFilter == "" || pi.Compatible(res.Controller, controllerFilter),
 		})
 	}
-	if ctx.global.JSON {
-		return output.JSON(out, rows)
-	}
 	tableRows := make([][]string, 0, len(rows))
 	for _, row := range rows {
 		compatible := "-"
 		if controllerFilter != "" {
 			compatible = yesNo(row.Compatible)
 		}
-		tableRows = append(tableRows, []string{row.Name, row.Label, pi.Join(row.Path), output.Value(row.Hash), formatList(row.Controllers), compatible})
+		tableRows = append(tableRows, []string{row.Name, row.Label, pi.Join(row.Path), output.Value(row.Hash), output.Value(pi.Join(row.Controllers)), compatible})
 	}
-	return table.Print(out, headers(
+	return emit(out, ctx.global.JSON, rows, headers(
 		"name", "名称",
 		"label", "显示名称",
 		"path", "资源路径",
@@ -251,13 +243,12 @@ func outputResourceNodes(out io.Writer, global *GlobalOptions, res resourceReade
 	if err != nil {
 		return withExitCode(ExitResource, fmt.Errorf("read resource nodes: %w", err))
 	}
-	if global.JSON {
-		return output.JSON(out, nodes)
-	}
-	for _, node := range nodes {
-		fmt.Fprintln(out, node)
-	}
-	return nil
+	return emitLines(out, global.JSON, nodes, func(out io.Writer) error {
+		for _, node := range nodes {
+			fmt.Fprintln(out, node)
+		}
+		return nil
+	})
 }
 
 func outputResourceHash(out io.Writer, global *GlobalOptions, res resourceReader, plan *resourcePlan, verify bool) error {
@@ -266,15 +257,14 @@ func outputResourceHash(out io.Writer, global *GlobalOptions, res resourceReader
 		return withExitCode(ExitResource, fmt.Errorf("read resource hash: %w", err))
 	}
 	result := map[string]any{"hash": hash, "expected_hash": plan.hash, "paths": plan.paths}
-	if global.JSON {
-		if err := output.JSON(out, result); err != nil {
-			return err
-		}
-	} else {
+	if err := emitLines(out, global.JSON, result, func(out io.Writer) error {
 		fmt.Fprintf(out, "hash: %s\n", hash)
 		if plan.hash != "" {
 			fmt.Fprintf(out, "expected: %s\n", plan.hash)
 		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	if !verify {
 		return nil
@@ -309,23 +299,22 @@ func outputResourceInspect(out io.Writer, global *GlobalOptions, res resourceRea
 	if plan.resource != nil {
 		result["resource"] = plan.resource.Name
 	}
-	if global.JSON {
-		return output.JSON(out, result)
-	}
-	if plan.resource != nil {
-		fmt.Fprintf(out, "resource: %s\n", plan.resource.Name)
-	}
-	for _, path := range loadedPaths {
-		fmt.Fprintf(out, "path: %s\n", path)
-	}
-	fmt.Fprintf(out, "hash: %s\n", hash)
-	if plan.hash != "" {
-		status := "match"
-		if hash != plan.hash {
-			status = "MISMATCH"
+	return emitLines(out, global.JSON, result, func(out io.Writer) error {
+		if plan.resource != nil {
+			fmt.Fprintf(out, "resource: %s\n", plan.resource.Name)
 		}
-		fmt.Fprintf(out, "expected hash: %s (%s)\n", plan.hash, status)
-	}
-	fmt.Fprintf(out, "nodes: %d\n", len(nodes))
-	return nil
+		for _, path := range loadedPaths {
+			fmt.Fprintf(out, "path: %s\n", path)
+		}
+		fmt.Fprintf(out, "hash: %s\n", hash)
+		if plan.hash != "" {
+			status := "match"
+			if hash != plan.hash {
+				status = "MISMATCH"
+			}
+			fmt.Fprintf(out, "expected hash: %s (%s)\n", plan.hash, status)
+		}
+		fmt.Fprintf(out, "nodes: %d\n", len(nodes))
+		return nil
+	})
 }

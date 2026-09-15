@@ -43,15 +43,15 @@ Search order: -cfg/--config, then <PI>/config/maa_pi_config.json, then
 			if err != nil {
 				return err
 			}
-			if global.JSON {
-				return output.JSON(cmd.OutOrStdout(), map[string]any{"path": path, "exists": fileExists(path)})
-			}
-			if path == "" {
-				fmt.Fprintln(cmd.OutOrStdout(), "No client configuration path; pass -cfg <path>")
+			out := cmd.OutOrStdout()
+			return emitLines(out, global.JSON, map[string]any{"path": path, "exists": fileExists(path)}, func(out io.Writer) error {
+				if path == "" {
+					fmt.Fprintln(out, "No client configuration path; pass -cfg <path>")
+					return nil
+				}
+				fmt.Fprintln(out, path)
 				return nil
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), path)
-			return nil
+			})
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
@@ -112,35 +112,34 @@ func showConfig(out io.Writer, global *GlobalOptions, config *clientconfig.Confi
 	for _, task := range config.Task {
 		view.Tasks = append(view.Tasks, configTaskView{Name: task.Name, Enabled: task.Enabled, Option: maskOptionValues(task.Option, project)})
 	}
-	if global.JSON {
-		return output.JSON(out, view)
-	}
-	if path == "" {
-		fmt.Fprintln(out, "path: (none)")
-	} else {
-		fmt.Fprintf(out, "path: %s (exists: %t)\n", path, view.Exists)
-	}
-	if view.Controller != "" {
-		fmt.Fprintf(out, "controller: %s\n", view.Controller)
-	}
-	if view.Resource != "" {
-		fmt.Fprintf(out, "resource: %s\n", view.Resource)
-	}
-	if view.Adb.Address != "" || view.Adb.AdbPath != "" {
-		fmt.Fprintf(out, "adb: address=%s adb_path=%s screencap=%s input=%s\n",
-			output.Value(view.Adb.Address), output.Value(view.Adb.AdbPath), output.Value(view.Adb.Screencap), output.Value(view.Adb.Input))
-	}
-	for _, key := range sortedKeys(view.Option) {
-		fmt.Fprintf(out, "option.%s = %v\n", key, view.Option[key])
-	}
-	for _, task := range view.Tasks {
-		enabled := "-"
-		if task.Enabled != nil {
-			enabled = fmt.Sprint(*task.Enabled)
+	return emitLines(out, global.JSON, view, func(out io.Writer) error {
+		if path == "" {
+			fmt.Fprintln(out, "path: (none)")
+		} else {
+			fmt.Fprintf(out, "path: %s (exists: %t)\n", path, view.Exists)
 		}
-		fmt.Fprintf(out, "task %s: enabled=%s options=%d\n", task.Name, enabled, len(task.Option))
-	}
-	return nil
+		if view.Controller != "" {
+			fmt.Fprintf(out, "controller: %s\n", view.Controller)
+		}
+		if view.Resource != "" {
+			fmt.Fprintf(out, "resource: %s\n", view.Resource)
+		}
+		if view.Adb.Address != "" || view.Adb.AdbPath != "" {
+			fmt.Fprintf(out, "adb: address=%s adb_path=%s screencap=%s input=%s\n",
+				output.Value(view.Adb.Address), output.Value(view.Adb.AdbPath), output.Value(view.Adb.Screencap), output.Value(view.Adb.Input))
+		}
+		for _, key := range sortedKeys(view.Option) {
+			fmt.Fprintf(out, "option.%s = %v\n", key, view.Option[key])
+		}
+		for _, task := range view.Tasks {
+			enabled := "-"
+			if task.Enabled != nil {
+				enabled = fmt.Sprint(*task.Enabled)
+			}
+			fmt.Fprintf(out, "task %s: enabled=%s options=%d\n", task.Name, enabled, len(task.Option))
+		}
+		return nil
+	})
 }
 
 // maskOptionValues hides the option values the ProjectInterface declares as

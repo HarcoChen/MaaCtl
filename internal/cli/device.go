@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 
 	"maactl/internal/i18n"
 	"maactl/internal/maafw"
@@ -65,12 +66,12 @@ the macOS window id, or the X11 window id.`, `报告窗口名称、类名与句�
 	}
 	return &cobra.Command{
 		Use: kind, Aliases: aliases, Short: short, Long: long, Example: example, Args: cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withMaaFramework(global, func() error {
 				if kind == "adb" {
-					return listADB(global.JSON)
+					return listADB(cmd.OutOrStdout(), global.JSON)
 				}
-				return listWindows(global.JSON)
+				return listWindows(cmd.OutOrStdout(), global.JSON)
 			})
 		},
 	}
@@ -93,9 +94,9 @@ func newLegacyDeviceCommands(global *GlobalOptions) []*cobra.Command {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: \"maactl %s devices\" is deprecated; use \"maactl device %s\"\n", name, replacement)
 				return withMaaFramework(global, func() error {
 					if name == "adb" {
-						return listADB(global.JSON)
+						return listADB(cmd.OutOrStdout(), global.JSON)
 					}
-					return listWindows(global.JSON)
+					return listWindows(cmd.OutOrStdout(), global.JSON)
 				})
 			},
 		})
@@ -119,54 +120,58 @@ func withMaaFramework(global *GlobalOptions, fn func() error) error {
 	return fn()
 }
 
-func listADB(jsonOutput bool) error {
+// listADB writes the ADB devices MaaToolkit found to out, as JSON or as a
+// plain list.
+func listADB(out io.Writer, jsonOutput bool) error {
 	devices, err := maa.FindAdbDevices()
 	if err != nil {
 		return withExitCode(ExitController, fmt.Errorf("find ADB devices: %w", err))
 	}
 	if jsonOutput {
-		out := make([]adbDeviceOutput, 0, len(devices))
+		rows := make([]adbDeviceOutput, 0, len(devices))
 		for _, d := range devices {
-			out = append(out, adbDeviceOutput{Name: d.Name, AdbPath: d.AdbPath, Address: d.Address, ScreencapMethod: d.ScreencapMethod.String(), InputMethod: d.InputMethod.String(), Config: d.Config})
+			rows = append(rows, adbDeviceOutput{Name: d.Name, AdbPath: d.AdbPath, Address: d.Address, ScreencapMethod: d.ScreencapMethod.String(), InputMethod: d.InputMethod.String(), Config: d.Config})
 		}
-		return output.Stdout(out)
+		return output.JSON(out, rows)
 	}
 	if len(devices) == 0 {
-		fmt.Println("No ADB devices found.")
+		fmt.Fprintln(out, "No ADB devices found.")
 		return nil
 	}
-	fmt.Printf("Found %d ADB device(s):\n", len(devices))
+	fmt.Fprintf(out, "Found %d ADB device(s):\n", len(devices))
 	for i, d := range devices {
-		fmt.Printf("[%d] %s\n", i+1, output.Value(d.Name))
-		fmt.Printf("    address: %s\n", output.Value(d.Address))
-		fmt.Printf("    adb: %s\n", output.Value(d.AdbPath))
-		fmt.Printf("    screencap: %s\n", output.Value(d.ScreencapMethod.String()))
-		fmt.Printf("    input: %s\n", output.Value(d.InputMethod.String()))
+		fmt.Fprintf(out, "[%d] %s\n", i+1, output.Value(d.Name))
+		fmt.Fprintf(out, "    address: %s\n", output.Value(d.Address))
+		fmt.Fprintf(out, "    adb: %s\n", output.Value(d.AdbPath))
+		fmt.Fprintf(out, "    screencap: %s\n", output.Value(d.ScreencapMethod.String()))
+		fmt.Fprintf(out, "    input: %s\n", output.Value(d.InputMethod.String()))
 	}
 	return nil
 }
 
-func listWindows(jsonOutput bool) error {
+// listWindows writes the desktop windows MaaToolkit found to out, as JSON or as
+// a plain list.
+func listWindows(out io.Writer, jsonOutput bool) error {
 	windows, err := maa.FindDesktopWindows()
 	if err != nil {
 		return withExitCode(ExitController, fmt.Errorf("find desktop windows: %w", err))
 	}
 	if jsonOutput {
-		out := make([]desktopWindowOutput, 0, len(windows))
+		rows := make([]desktopWindowOutput, 0, len(windows))
 		for _, w := range windows {
-			out = append(out, desktopWindowOutput{Handle: windowHandleString(uintptr(w.Handle)), ClassName: w.ClassName, WindowName: w.WindowName})
+			rows = append(rows, desktopWindowOutput{Handle: windowHandleString(uintptr(w.Handle)), ClassName: w.ClassName, WindowName: w.WindowName})
 		}
-		return output.Stdout(out)
+		return output.JSON(out, rows)
 	}
 	if len(windows) == 0 {
-		fmt.Println("No desktop windows found.")
+		fmt.Fprintln(out, "No desktop windows found.")
 		return nil
 	}
-	fmt.Printf("Found %d desktop window(s):\n", len(windows))
+	fmt.Fprintf(out, "Found %d desktop window(s):\n", len(windows))
 	for i, w := range windows {
-		fmt.Printf("[%d] %s\n", i+1, output.Value(w.WindowName))
-		fmt.Printf("    class: %s\n", output.Value(w.ClassName))
-		fmt.Printf("    handle: %s\n", windowHandleString(uintptr(w.Handle)))
+		fmt.Fprintf(out, "[%d] %s\n", i+1, output.Value(w.WindowName))
+		fmt.Fprintf(out, "    class: %s\n", output.Value(w.ClassName))
+		fmt.Fprintf(out, "    handle: %s\n", windowHandleString(uintptr(w.Handle)))
 	}
 	return nil
 }

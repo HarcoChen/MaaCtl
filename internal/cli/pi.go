@@ -9,7 +9,6 @@ import (
 	"maactl/internal/i18n"
 	"maactl/internal/output"
 	"maactl/internal/pi"
-	"maactl/internal/table"
 
 	"github.com/spf13/cobra"
 )
@@ -71,20 +70,53 @@ func (c *piContext) label(label, name string) string {
 	return c.translator.Resolve(label)
 }
 
-func newPIInfoCommand(global *GlobalOptions) *cobra.Command {
-	return &cobra.Command{
-		Use:     "info",
-		Aliases: []string{"i"},
-		Short:   i18n.Text("Show the project summary", "显示项目概览"),
+// piQuerySpec describes one read-only `pi` subcommand. They all share the same
+// shape — load the ProjectInterface, then report something about it — so they
+// differ only in this spec.
+type piQuerySpec struct {
+	use     string
+	aliases []string
+	short   string
+	long    string
+	example string
+	// flags registers the command's own flags; nil when it has none.
+	flags func(*cobra.Command)
+	// run reports the query result once the project is loaded.
+	run func(ctx *piContext, out io.Writer) error
+}
+
+// newPIQueryCommand builds a `pi` query subcommand from spec.
+func newPIQueryCommand(global *GlobalOptions, spec piQuerySpec) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     spec.use,
+		Aliases: spec.aliases,
+		Short:   spec.short,
+		Long:    spec.long,
+		Example: spec.example,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, err := loadPI(global)
 			if err != nil {
 				return err
 			}
-			return outputInfo(cmd.OutOrStdout(), ctx)
+			return spec.run(ctx, cmd.OutOrStdout())
 		},
 	}
+	if spec.flags != nil {
+		spec.flags(cmd)
+	}
+	return cmd
+}
+
+func newPIInfoCommand(global *GlobalOptions) *cobra.Command {
+	return newPIQueryCommand(global, piQuerySpec{
+		use:     "info",
+		aliases: []string{"i"},
+		short:   i18n.Text("Show the project summary", "显示项目概览"),
+		run: func(ctx *piContext, out io.Writer) error {
+			return outputInfo(out, ctx)
+		},
+	})
 }
 
 // infoOutput is the JSON shape of `pi info`.
@@ -146,87 +178,76 @@ func outputInfo(out io.Writer, ctx *piContext) error {
 		RunnableTypes:    pi.RunnableControllerTypes(),
 		Telemetry:        project.Telemetry != nil && project.Telemetry.Sentry != nil && project.Telemetry.Sentry.DSN != "",
 	}
-	if ctx.global.JSON {
-		return output.JSON(out, info)
-	}
-	fmt.Fprintf(out, "%s (%s) %s\n", output.Value(info.Label), output.Value(info.Name), output.Value(info.Version))
-	fmt.Fprintf(out, "interface: %s\n", info.Path)
-	if len(info.Files) > 1 {
-		fmt.Fprintf(out, "files: %d (import merged)\n", len(info.Files))
-	}
-	fmt.Fprintf(out, "protocol: PI %s (interface_version %d)\n", info.ProtocolVersion, info.InterfaceVersion)
-	if info.Language != "" {
-		fmt.Fprintf(out, "language: %s\n", info.Language)
-	}
-	fmt.Fprintf(out, "controllers: %d\nresources: %d\ntasks: %d\ngroups: %d\noptions: %d\npresets: %d\nsettings: %d\n",
-		info.Controllers, info.Resources, info.Tasks, info.Groups, info.Options, info.Presets, info.Settings)
-	if info.Pretasks > 0 || info.Agents > 0 {
-		fmt.Fprintf(out, "pretasks: %d\nagents: %d\n", info.Pretasks, info.Agents)
-	}
-	if info.Telemetry {
-		fmt.Fprintf(out, "telemetry: declared (maactl does not report telemetry)\n")
-	}
-	return nil
+	return emitLines(out, ctx.global.JSON, info, func(out io.Writer) error {
+		fmt.Fprintf(out, "%s (%s) %s\n", output.Value(info.Label), output.Value(info.Name), output.Value(info.Version))
+		fmt.Fprintf(out, "interface: %s\n", info.Path)
+		if len(info.Files) > 1 {
+			fmt.Fprintf(out, "files: %d (import merged)\n", len(info.Files))
+		}
+		fmt.Fprintf(out, "protocol: PI %s (interface_version %d)\n", info.ProtocolVersion, info.InterfaceVersion)
+		if info.Language != "" {
+			fmt.Fprintf(out, "language: %s\n", info.Language)
+		}
+		fmt.Fprintf(out, "controllers: %d\nresources: %d\ntasks: %d\ngroups: %d\noptions: %d\npresets: %d\nsettings: %d\n",
+			info.Controllers, info.Resources, info.Tasks, info.Groups, info.Options, info.Presets, info.Settings)
+		if info.Pretasks > 0 || info.Agents > 0 {
+			fmt.Fprintf(out, "pretasks: %d\nagents: %d\n", info.Pretasks, info.Agents)
+		}
+		if info.Telemetry {
+			fmt.Fprintf(out, "telemetry: declared (maactl does not report telemetry)\n")
+		}
+		return nil
+	})
 }
 
 func newPIValidateCommand(global *GlobalOptions) *cobra.Command {
 	var strict bool
-	cmd := &cobra.Command{
-		Use:     "validate",
-		Aliases: []string{"v"},
-		Short:   i18n.Text("Validate the interface", "校验接口"),
-		Long: i18n.Text(`Checks parsing, name uniqueness, every cross reference, and the declared
+	return newPIQueryCommand(global, piQuerySpec{
+		use:     "validate",
+		aliases: []string{"v"},
+		short:   i18n.Text("Validate the interface", "校验接口"),
+		long: i18n.Text(`Checks parsing, name uniqueness, every cross reference, and the declared
 files. -st/--strict also fails on advisory findings (a controller this platform
 cannot create, a missing resource path or language file).`, `检查解析、名称唯一性、全部交叉引用与声明的文件。-st/--strict 会把提示性问题
 （当前平台无法创建的控制器、缺失的资源路径或语言文件）也视为失败。`),
-		Example: `  maactl pi v -st -j`,
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := loadPI(global)
-			if err != nil {
-				return err
-			}
+		example: `  maactl pi v -st -j`,
+		flags: func(cmd *cobra.Command) {
+			cmd.Flags().BoolVarP(&strict, "strict", "s", false, i18n.Text("treat advisory findings as errors", "把提示性问题视为错误"))
+		},
+		run: func(ctx *piContext, out io.Writer) error {
 			report := ctx.project.Validate(pi.ValidateOptions{Strict: strict})
-			out := cmd.OutOrStdout()
-			if global.JSON {
-				if err := output.JSON(out, report); err != nil {
-					return err
-				}
-			} else {
+			if err := emitLines(out, ctx.global.JSON, report, func(out io.Writer) error {
 				for _, issue := range report.Issues {
 					fmt.Fprintf(out, "%s: %s: %s\n", strings.ToUpper(string(issue.Level)), issue.Path, issue.Message)
 				}
 				if report.OK() {
 					fmt.Fprintf(out, "Valid ProjectInterface: %s (%d warning(s))\n", ctx.project.Path, report.Warnings())
 				}
+				return nil
+			}); err != nil {
+				return err
 			}
 			if !report.OK() {
 				return exitErrorf(ExitUsage, "%s failed validation: %d error(s), %d warning(s)", ctx.project.Path, report.Errors(), report.Warnings())
 			}
 			return nil
 		},
-	}
-	cmd.Flags().BoolVarP(&strict, "strict", "s", false, i18n.Text("treat advisory findings as errors", "把提示性问题视为错误"))
-	return cmd
+	})
 }
 
 func newPIControllersCommand(global *GlobalOptions) *cobra.Command {
 	var typeFilter string
-	cmd := &cobra.Command{
-		Use:     "controllers",
-		Aliases: []string{"c"},
-		Short:   i18n.Text("List controllers", "列出控制器"),
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := loadPI(global)
-			if err != nil {
-				return err
-			}
-			return listControllers(cmd.OutOrStdout(), ctx, typeFilter)
+	return newPIQueryCommand(global, piQuerySpec{
+		use:     "controllers",
+		aliases: []string{"c"},
+		short:   i18n.Text("List controllers", "列出控制器"),
+		flags: func(cmd *cobra.Command) {
+			cmd.Flags().StringVar(&typeFilter, "type", "", i18n.Text("only this controller type", "只显示该类型的控制器"))
 		},
-	}
-	cmd.Flags().StringVar(&typeFilter, "type", "", i18n.Text("only this controller type", "只显示该类型的控制器"))
-	return cmd
+		run: func(ctx *piContext, out io.Writer) error {
+			return listControllers(out, ctx, typeFilter)
+		},
+	})
 }
 
 // controllerRow is one row of `pi controllers`.
@@ -261,14 +282,11 @@ func listControllers(out io.Writer, ctx *piContext, typeFilter string) error {
 			Resources: resources,
 		})
 	}
-	if ctx.global.JSON {
-		return output.JSON(out, rows)
-	}
 	tableRows := make([][]string, 0, len(rows))
 	for _, row := range rows {
 		tableRows = append(tableRows, []string{row.Name, row.Label, row.Type, yesNo(row.Runnable), fmt.Sprint(row.Options), fmt.Sprint(row.Resources)})
 	}
-	return table.Print(out, headers(
+	return emit(out, ctx.global.JSON, rows, headers(
 		"name", "名称",
 		"label", "显示名称",
 		"type", "类型",
@@ -281,29 +299,25 @@ func listControllers(out io.Writer, ctx *piContext, typeFilter string) error {
 func newPITasksCommand(global *GlobalOptions) *cobra.Command {
 	var controllerFilter, resourceFilter, groupFilter string
 	var all bool
-	cmd := &cobra.Command{
-		Use:     "tasks",
-		Aliases: []string{"t"},
-		Short:   i18n.Text("List tasks", "列出任务"),
-		Long: i18n.Text(`Lists tasks with their entry node, groups, and option count. Tasks that do not
+	return newPIQueryCommand(global, piQuerySpec{
+		use:     "tasks",
+		aliases: []string{"t"},
+		short:   i18n.Text("List tasks", "列出任务"),
+		long: i18n.Text(`Lists tasks with their entry node, groups, and option count. Tasks that do not
 match the selected controller/resource are hidden unless -all/--all is given.`, `列出任务及其入口节点、分组和选项数量。与所选控制器/资源不匹配的任务默认隐藏，
 -all/--all 会列出并说明原因。`),
-		Example: `  maactl pi t -c Android -r base
+		example: `  maactl pi t -c Android -r base
   maactl pi t -all -j`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := loadPI(global)
-			if err != nil {
-				return err
-			}
-			return listTasks(cmd.OutOrStdout(), ctx, controllerFilter, resourceFilter, groupFilter, all)
+		flags: func(cmd *cobra.Command) {
+			cmd.Flags().StringVarP(&controllerFilter, "controller", "c", "", i18n.Text("filter by controller", "按控制器过滤"))
+			cmd.Flags().StringVarP(&resourceFilter, "resource", "r", "", i18n.Text("filter by resource", "按资源过滤"))
+			cmd.Flags().StringVar(&groupFilter, "group", "", i18n.Text("filter by group", "按分组过滤"))
+			cmd.Flags().BoolVar(&all, "all", false, i18n.Text("include tasks that do not apply, with the reason", "包含不适用的任务并给出原因"))
 		},
-	}
-	cmd.Flags().StringVarP(&controllerFilter, "controller", "c", "", i18n.Text("filter by controller", "按控制器过滤"))
-	cmd.Flags().StringVarP(&resourceFilter, "resource", "r", "", i18n.Text("filter by resource", "按资源过滤"))
-	cmd.Flags().StringVar(&groupFilter, "group", "", i18n.Text("filter by group", "按分组过滤"))
-	cmd.Flags().BoolVar(&all, "all", false, i18n.Text("include tasks that do not apply, with the reason", "包含不适用的任务并给出原因"))
-	return cmd
+		run: func(ctx *piContext, out io.Writer) error {
+			return listTasks(out, ctx, controllerFilter, resourceFilter, groupFilter, all)
+		},
+	})
 }
 
 // taskRow is one row of `pi tasks`.
@@ -357,9 +371,6 @@ func listTasks(out io.Writer, ctx *piContext, controllerFilter, resourceFilter, 
 			Unavailable: reasons,
 		})
 	}
-	if ctx.global.JSON {
-		return output.JSON(out, rows)
-	}
 	headersList := []string{
 		i18n.Text("name", "名称"), i18n.Text("label", "显示名称"), i18n.Text("entry", "入口节点"),
 		i18n.Text("group", "分组"), i18n.Text("options", "选项数"),
@@ -369,29 +380,24 @@ func listTasks(out io.Writer, ctx *piContext, controllerFilter, resourceFilter, 
 	}
 	tableRows := make([][]string, 0, len(rows))
 	for _, row := range rows {
-		values := []string{row.Name, row.Label, output.Value(row.Entry), formatList(row.Group), fmt.Sprint(row.Options)}
+		values := []string{row.Name, row.Label, output.Value(row.Entry), output.Value(pi.Join(row.Group)), fmt.Sprint(row.Options)}
 		if all {
 			values = append(values, output.Value(strings.Join(row.Unavailable, "; ")))
 		}
 		tableRows = append(tableRows, values)
 	}
-	return table.Print(out, headersList, tableRows)
+	return emit(out, ctx.global.JSON, rows, headersList, tableRows)
 }
 
 func newPIGroupsCommand(global *GlobalOptions) *cobra.Command {
-	return &cobra.Command{
-		Use:     "groups",
-		Aliases: []string{"g"},
-		Short:   i18n.Text("List task groups", "列出任务分组"),
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := loadPI(global)
-			if err != nil {
-				return err
-			}
-			return listGroups(cmd.OutOrStdout(), ctx)
+	return newPIQueryCommand(global, piQuerySpec{
+		use:     "groups",
+		aliases: []string{"g"},
+		short:   i18n.Text("List task groups", "列出任务分组"),
+		run: func(ctx *piContext, out io.Writer) error {
+			return listGroups(out, ctx)
 		},
-	}
+	})
 }
 
 // groupRow is one row of `pi groups`.
@@ -414,32 +420,24 @@ func listGroups(out io.Writer, ctx *piContext) error {
 		}
 		rows = append(rows, groupRow{Name: group.Name, Label: ctx.label(group.Label, group.Name), DefaultExpand: group.Expands(), Tasks: tasks})
 	}
-	if ctx.global.JSON {
-		return output.JSON(out, rows)
-	}
 	tableRows := make([][]string, 0, len(rows))
 	for _, row := range rows {
 		tableRows = append(tableRows, []string{row.Name, row.Label, yesNo(row.DefaultExpand), fmt.Sprint(row.Tasks)})
 	}
-	return table.Print(out, headers(
+	return emit(out, ctx.global.JSON, rows, headers(
 		"name", "名称", "label", "显示名称", "default_expand", "默认展开", "tasks", "任务数",
 	), tableRows)
 }
 
 func newPIPresetsCommand(global *GlobalOptions) *cobra.Command {
-	return &cobra.Command{
-		Use:     "presets",
-		Aliases: []string{"p"},
-		Short:   i18n.Text("List presets", "列出预设"),
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := loadPI(global)
-			if err != nil {
-				return err
-			}
-			return listPresets(cmd.OutOrStdout(), ctx)
+	return newPIQueryCommand(global, piQuerySpec{
+		use:     "presets",
+		aliases: []string{"p"},
+		short:   i18n.Text("List presets", "列出预设"),
+		run: func(ctx *piContext, out io.Writer) error {
+			return listPresets(out, ctx)
 		},
-	}
+	})
 }
 
 // presetRow is one row of `pi presets`.
@@ -469,32 +467,24 @@ func listPresets(out io.Writer, ctx *piContext) error {
 		}
 		rows = append(rows, row)
 	}
-	if ctx.global.JSON {
-		return output.JSON(out, ctx.project.Preset)
-	}
 	tableRows := make([][]string, 0, len(rows))
 	for _, row := range rows {
 		tableRows = append(tableRows, []string{row.Name, row.Label, fmt.Sprint(len(row.Tasks)), fmt.Sprint(len(row.Disabled))})
 	}
-	return table.Print(out, headers(
+	return emit(out, ctx.global.JSON, ctx.project.Preset, headers(
 		"name", "名称", "label", "显示名称", "tasks", "启用任务数", "disabled", "禁用任务数",
 	), tableRows)
 }
 
 func newPISettingsCommand(global *GlobalOptions) *cobra.Command {
-	return &cobra.Command{
-		Use:     "settings",
-		Aliases: []string{"s"},
-		Short:   i18n.Text("List setting sections", "列出设置分区"),
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := loadPI(global)
-			if err != nil {
-				return err
-			}
-			return listSettings(cmd.OutOrStdout(), ctx)
+	return newPIQueryCommand(global, piQuerySpec{
+		use:     "settings",
+		aliases: []string{"s"},
+		short:   i18n.Text("List setting sections", "列出设置分区"),
+		run: func(ctx *piContext, out io.Writer) error {
+			return listSettings(out, ctx)
 		},
-	}
+	})
 }
 
 // settingRow is one row of `pi settings`.
@@ -511,14 +501,11 @@ func listSettings(out io.Writer, ctx *piContext) error {
 		setting := &ctx.project.Setting[i]
 		rows = append(rows, settingRow{Name: setting.Name, Label: ctx.label(setting.Label, setting.Name), DefaultExpand: setting.Expands(), Option: setting.Option})
 	}
-	if ctx.global.JSON {
-		return output.JSON(out, rows)
-	}
 	tableRows := make([][]string, 0, len(rows))
 	for _, row := range rows {
-		tableRows = append(tableRows, []string{row.Name, row.Label, yesNo(row.DefaultExpand), formatList(row.Option)})
+		tableRows = append(tableRows, []string{row.Name, row.Label, yesNo(row.DefaultExpand), output.Value(pi.Join(row.Option))})
 	}
-	return table.Print(out, headers(
+	return emit(out, ctx.global.JSON, rows, headers(
 		"name", "名称", "label", "显示名称", "default_expand", "默认展开", "options", "选项",
 	), tableRows)
 }
@@ -538,14 +525,6 @@ func yesNo(value bool) string {
 		return i18n.Text("yes", "是")
 	}
 	return i18n.Text("no", "否")
-}
-
-// formatList renders a string list for a table cell.
-func formatList(items []string) string {
-	if len(items) == 0 {
-		return "-"
-	}
-	return pi.Join(items)
 }
 
 // containsName reports exact membership, used for --group filtering where an

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"maactl/internal/i18n"
-	"maactl/internal/output"
 	"maactl/internal/pi"
 
 	"github.com/spf13/cobra"
@@ -16,11 +15,11 @@ import (
 func newPIOptionsCommand(global *GlobalOptions) *cobra.Command {
 	var taskName, controllerFilter, resourceFilter string
 	var all bool
-	cmd := &cobra.Command{
-		Use:     "options",
-		Aliases: []string{"o"},
-		Short:   i18n.Text("Show the option tree", "显示配置项树"),
-		Long: i18n.Text(`Shows which options are active and in which order they merge:
+	return newPIQueryCommand(global, piQuerySpec{
+		use:     "options",
+		aliases: []string{"o"},
+		short:   i18n.Text("Show the option tree", "显示配置项树"),
+		long: i18n.Text(`Shows which options are active and in which order they merge:
 global_option → resource.option → controller.option → task.option, including
 the nested options activated by the selected cases.
 
@@ -30,23 +29,19 @@ global_option → resource.option → controller.option → task.option，
 并展开被选中 case 激活的子配置项。
 
 -all/--all 还会列出当前不适用的配置项，以及没有任何层引用的配置项。`),
-		Example: `  maactl pi o -if D:\MaaMio
+		example: `  maactl pi o -if D:\MaaMio
   maactl pi o -t 常规作战 -c Windows -r Official
   maactl pi o -all -j`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, err := loadPI(global)
-			if err != nil {
-				return err
-			}
-			return listOptions(cmd.OutOrStdout(), ctx, controllerFilter, resourceFilter, taskName, all)
+		flags: func(cmd *cobra.Command) {
+			cmd.Flags().StringVarP(&controllerFilter, "controller", "c", "", i18n.Text("controller to check applicability against", "用于判断适用性的控制器"))
+			cmd.Flags().StringVarP(&resourceFilter, "resource", "r", "", i18n.Text("resource to check applicability against", "用于判断适用性的资源"))
+			cmd.Flags().StringVarP(&taskName, "task", "t", "", i18n.Text("include the options this task references", "包含该任务引用的配置项"))
+			cmd.Flags().BoolVar(&all, "all", false, i18n.Text("include inactive and unreferenced options", "包含不适用和未被引用的配置项"))
 		},
-	}
-	cmd.Flags().StringVarP(&controllerFilter, "controller", "c", "", i18n.Text("controller to check applicability against", "用于判断适用性的控制器"))
-	cmd.Flags().StringVarP(&resourceFilter, "resource", "r", "", i18n.Text("resource to check applicability against", "用于判断适用性的资源"))
-	cmd.Flags().StringVarP(&taskName, "task", "t", "", i18n.Text("include the options this task references", "包含该任务引用的配置项"))
-	cmd.Flags().BoolVar(&all, "all", false, i18n.Text("include inactive and unreferenced options", "包含不适用和未被引用的配置项"))
-	return cmd
+		run: func(ctx *piContext, out io.Writer) error {
+			return listOptions(out, ctx, controllerFilter, resourceFilter, taskName, all)
+		},
+	})
 }
 
 // optionPlanRow is one row of `pi options`.
@@ -78,16 +73,15 @@ func listOptions(out io.Writer, ctx *piContext, controllerFilter, resourceFilter
 	for _, entry := range entries {
 		rows = append(rows, describeOption(ctx, entry))
 	}
-	if ctx.global.JSON {
-		return output.JSON(out, rows)
-	}
-	for i, row := range rows {
-		if i == 0 || row.Layer != rows[i-1].Layer {
-			fmt.Fprintf(out, "[%s]\n", row.Layer)
+	return emitLines(out, ctx.global.JSON, rows, func(out io.Writer) error {
+		for i, row := range rows {
+			if i == 0 || row.Layer != rows[i-1].Layer {
+				fmt.Fprintf(out, "[%s]\n", row.Layer)
+			}
+			fmt.Fprintln(out, renderOptionRow(row))
 		}
-		fmt.Fprintln(out, renderOptionRow(row))
-	}
-	return nil
+		return nil
+	})
 }
 
 // resolveOptionScope picks the controller/resource/task that applicability and

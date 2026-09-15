@@ -212,7 +212,7 @@ func writeFlags(b *strings.Builder, cmd *cobra.Command) {
 	for _, section := range sectionOrder {
 		writeFlagGroup(b, sectionTitle(section), groups[section])
 	}
-	global = append(global, syntheticHelpFlag())
+	global = append(global, helpFlag(cmd))
 	writeFlagGroup(b, i18n.Text("Global:", "全局选项："), global)
 }
 
@@ -245,10 +245,6 @@ func writeFlagGroup(b *strings.Builder, title string, flags []*pflag.Flag) {
 		if len(labels[i]) > width {
 			width = len(labels[i])
 		}
-	}
-	const maxWidth = 34
-	if width > maxWidth {
-		width = maxWidth
 	}
 	writeHeading(b, title)
 	for i := range flags {
@@ -290,6 +286,17 @@ func defaultSuffix(f *pflag.Flag) string {
 		def = `"` + def + `"`
 	}
 	return i18n.Text(" (default "+def+")", "（默认 "+def+"）")
+}
+
+// helpFlag returns the flag that -h and --help actually set. Cobra installs it
+// before the command runs, so rendering it keeps this page and the parser in
+// step; a fresh flag is synthesized only when the page is rendered before cobra
+// created one.
+func helpFlag(cmd *cobra.Command) *pflag.Flag {
+	if flag := cmd.Flags().Lookup("help"); flag != nil {
+		return flag
+	}
+	return syntheticHelpFlag()
 }
 
 func syntheticHelpFlag() *pflag.Flag {
