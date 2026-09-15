@@ -15,6 +15,21 @@ import (
 // Extracting once per payload keeps start-up fast while never modifying the
 // directory the executable lives in, which may be read-only.
 func bundledLibDir() (string, error) {
+	target, err := bundledTargetDir()
+	if err != nil {
+		return "", err
+	}
+	if _, err := bundled.Extract(target); err != nil {
+		return "", err
+	}
+	return target, nil
+}
+
+// bundledTargetDir returns the cache directory the embedded payload is
+// extracted into, without extracting it. It reports the same errors
+// bundledLibDir does, so callers can tell whether a resolved directory came
+// from the embedded payload.
+func bundledTargetDir() (string, error) {
 	switch {
 	case !bundled.Compiled():
 		return "", errNoBundle
@@ -31,11 +46,20 @@ func bundledLibDir() (string, error) {
 			return "", err
 		}
 	}
-	target := filepath.Join(root, "maactl", "maafw", bundled.CacheID(), "bin")
-	if _, err := bundled.Extract(target); err != nil {
-		return "", err
+	return filepath.Join(root, "maactl", "maafw", bundled.CacheID(), "bin"), nil
+}
+
+// BundledLibDir returns the directory this build's embedded payload would be
+// extracted into, or "" when the build has no usable payload. It never
+// extracts the payload, so callers can compare it against a resolved library
+// directory to tell whether the runtime actually came from the embedded
+// payload rather than from ./maafw/bin.
+func BundledLibDir() string {
+	dir, err := bundledTargetDir()
+	if err != nil {
+		return ""
 	}
-	return target, nil
+	return dir
 }
 
 // fallbackCacheDir names a cache root under the system temporary directory for

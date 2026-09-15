@@ -91,15 +91,16 @@ maactl help run                                # 查看某条命令的帮助
 ```
 
 命令分成五组，**每个命令与每个选项都有短形式**（命令别名 1–3 字母，选项用单字母或 `-if`
-这类助记别名，帮助里都会列出）：
+这类助记别名，帮助里都会列出；cobra 生成的 `completion` 子树及其 `--no-descriptions` 除外）：
 
 | 命令 | 别名 | 作用 |
 | --- | --- | --- |
-| `pi` | `if` | 检查 ProjectInterface：`info`/`validate`/`controllers`/`tasks`/`groups`/`options`/`presets`/`settings` |
+| `pi` | `if`, `interface` | 检查 ProjectInterface：`info`/`validate`/`controllers`/`tasks`/`groups`/`options`/`presets`/`settings` |
 | `resource` | `res` | 资源：`list`（声明）/`inspect`/`nodes`/`hash`（已加载） |
 | `device` | `dev` | 列出 MaaToolkit 发现的设备：`device adb` / `device window`（别名 `win32`） |
 | `run` | `r` | 执行：`run task <名字>` / `run preset <名字>` / `run node <名字>` |
 | `config` | `cfg` | 查看客户端配置：`config path` / `config show` |
+| `version` | `ver` | 打印版本（等价 `maactl -v`） |
 
 只读查询（`pi`、`resource`、`device`）在前，执行（`run`）在后；同一个对象的所有查询都只在
 一个分组里（资源声明与已加载资源都在 `resource` 下）。
@@ -108,8 +109,8 @@ maactl help run                                # 查看某条命令的帮助
 
 | 短形式 | 长形式 | 作用 |
 | --- | --- | --- |
-| `-if` | `--interface` | 指定 PI 文件或包含它的目录，默认 `./interface.json` |
-| `-lib` | `--lib-dir` | 指定 MaaFramework 运行库目录，覆盖自带运行库 |
+| `-f` / `-if` | `--interface` | 指定 PI 文件或包含它的目录，默认 `./interface.json` |
+| `-l` / `-lib` | `--lib-dir` | 指定 MaaFramework 运行库目录，覆盖自带运行库 |
 | `-j` | `--json` | 以 JSON 输出，便于脚本处理 |
 | `-lg` | `--lang` | 解析 PI `$label` 的语言（默认跟随系统） |
 | `-cfg` / `-nocfg` | `--config` / `--no-config` | 指定或跳过客户端配置文件 |
@@ -138,10 +139,12 @@ maactl help run                                # 查看某条命令的帮助
 | `-dr` / `-x` | `--dry-run` / `--explain` | 预演并打印选择与各层覆盖，不执行 |
 | `-e` / `-fd` | `--events` / `--focus-display` | 事件与 focus 输出控制 |
 | `-to` / `-sa` | `--timeout` / `--stop-after` | 限时运行 |
+| `-na` / `-al` | `--no-agent` / `--agent-log` | 是否启动 agent、agent 输出去向 |
+| `-k` / `-coe` | `--continue-on-error` | `run preset` 中某个 task 失败后继续 |
 | `-rh` | `--require-resource-hash` | `resource.hash` 不匹配时失败 |
 
-退出码固定：`0` 成功、`2` 参数/PI、`3` 资源、`4` 控制器、`5` pretask、`6` 任务失败、
-`7` 超时、`8` 中断。
+退出码固定：`0` 成功、`1` 框架/内部错误、`2` 参数/PI、`3` 资源、`4` 控制器、`5` pretask、
+`6` 任务失败、`7` 超时、`8` 中断。
 
 更多命令、配置项语法、覆盖顺序与迁移对照见 [docs/cli.md](docs/cli.md)。
 

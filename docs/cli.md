@@ -7,6 +7,7 @@
 
 - **每个命令与每个选项都有短形式**：命令用 1–3 字母别名（`maactl pi t`），选项用单字母
   shorthand（`-j`）或 2–3 字母助记别名（`-if`、`-opt`）。两者都在帮助里列出。
+  cobra 生成的 `completion` 子树及其 `--no-descriptions` 除外。
 - 只有命令名和必需的名称（task、node、preset）使用位置参数；其余一律是 `-`/`--` 选项。
 - PI 默认从**进程启动目录**读取 `./interface.json`。`-f`/`-if`/`--interface` 可指定文件，
   或包含 `interface.json` 的项目目录。相对路径都以该文件所在目录解析。
@@ -51,8 +52,8 @@ maactl device adb -j
 | `-h` | `--help` | 帮助 |
 | `-v` | `--version` | 版本（只在顶层是版本） |
 
-短形式不重复占用：`-r`/`-c` 始终是 resource/controller，`-t`/`-n` 只属于 `run` 的快捷形式，
-`-o` 只属于 `--override`，`-p` 只属于 `--preset`。
+短形式不重复占用：`-r`/`-c` 始终是 resource/controller；`-t`/`-n` 是 `run` 的快捷形式
+（`-t` 在 `pi options` 下也表示 `--task`）；`-o` 只属于 `--override`，`-p` 只属于 `--preset`。
 
 ### 退出码
 
@@ -133,6 +134,8 @@ maactl resource h -pa D:\projects\pkg\resource -vf
 `resource.path`（相对 PI 目录）。`-ol/--overlay` 在基础路径之后加载，可重复。
 `resource hash -vf` 在 PI 模式下与 `resource.hash` 比较，不一致时以退出码 3 失败。
 
+`resource list` 只读取 `-c`；`resource` 组继承的 `-r`/`-pa`/`-ol` 只对 `inspect`/`nodes`/`hash` 生效。
+
 ## 查看设备：`device`（`dev`）
 
 ```powershell
@@ -189,11 +192,14 @@ maactl run -n <node-name>           # 等价 run node
 | 控制 | `-to` | `--timeout <duration>` | 超过时长后 `PostStop` 并以退出码 7 结束 |
 | 控制 | `-sa` | `--stop-after <duration>` | 运行指定时长后停止并视为成功（调试用） |
 | 控制 | `-na` / `-al` | `--no-agent` / `--agent-log <term\|off\|dir>` | 是否启动 agent、agent 输出去向 |
-| 控制 | `-k` | `--continue-on-error` | `run preset` 中某个 task 失败后继续 |
+| 控制 | `-k` / `-coe` | `--continue-on-error` | `run preset` 中某个 task 失败后继续 |
 
 平台专属的目标选项（`--win32-*`、`--gamepad-type`、`--macos-*`、`--playcover-*`、`--linux-*`）
 在任何平台上都会出现在帮助里，方便同一份脚本跨平台复用；不属于当前平台的控制器类型不会被创建，
 而是直接报错并列出本平台支持的控制器类型（`pi validate` 也会对其给出警告）。
+
+`-pa/--path` 与 `-ol/--overlay` 只在 `run node` 生效；`run task`/`run preset` 会接受这两个
+选项但不读取它们（`run task`/`run preset` 的资源来源仍是 `-r`/`--resource`）。
 
 ### `run task`
 
@@ -288,7 +294,9 @@ maactl config path / maactl config p    -if D:\01_Projects\github\MaaMio   # 配
 maactl config show / maactl config s    -if D:\01_Projects\github\MaaMio   # 生效的控制器/资源/设备/取值
 ```
 
-密码型取值只显示 `{"env":"NAME"}`，不回显明文。
+掩码规则：只有 ProjectInterface 把该 option 声明为 `inputs[].password` 的字段时，取值才显示为
+`******`；`env` 引用只显示变量名（不是密文）；普通 option 取值原样显示；没有 ProjectInterface、
+或该 option 未被声明时一律掩盖。
 
 ## 帮助与 JSON
 
@@ -333,7 +341,7 @@ maactl selfcheck
 # MaaFramework v5.13.0 (linux-x86_64, bundled) from /home/me/.cache/maactl/maafw/linux-x86_64-v5.13.0/bin
 ```
 
-它按与其它命令相同的方式加载 MaaFramework（自带运行库 → `-lib-dir` → `./maafw/bin`），
+它按与其它命令相同的方式加载 MaaFramework（`-lib`/`--lib-dir` → 自带运行库 → `./maafw/bin`），
 打印实际加载到的版本、平台与来源；加载失败时以退出码 1 结束。用于区分“运行库有问题”与
 “项目/设备有问题”，CI 也在每个平台上跑它。它不出现在 `-h` 里。
 

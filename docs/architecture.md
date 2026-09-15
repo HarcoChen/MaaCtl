@@ -4,7 +4,7 @@
 cmd/maactl/            程序入口（main 包：解析参数、把 ExitError 映射为退出码）
 internal/
   cli/                 命令树：root、pi、pi_options、resource、device、run、execute、
-                       config、controller、window、agent、exit、aliases
+                       config、controller、window、agent、selfcheck、emit、exit、aliases
   pi/                  ProjectInterface v2 模型、加载与 import 合并、i18n、校验、
                        option 求值、Pipeline 合并、按键码表
   platform/            MaaFramework 发布平台（win/linux/macos × x86_64/aarch64）：

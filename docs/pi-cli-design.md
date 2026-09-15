@@ -86,7 +86,8 @@ maactl [global flags] <group> [subcommand] [arguments] [flags]
 
 ### 3.1 短别名规则
 
-每个命令、每个选项都有短形式，短形式可以是 1–3 个字母：
+每个命令、每个选项都有短形式（cobra 生成的 `completion` 子树及其 `--no-descriptions` 除外），
+短形式可以是 1–3 个字母：
 
 - **命令别名**用 cobra 原生别名实现，形如 `maactl pi t`、`maactl resource l`、`maactl r -t 签到`。
   同一父命令下别名不重复，帮助的 `Commands:` 段直接列出 `名字, 别名`。
@@ -121,7 +122,7 @@ maactl [global flags] <group> [subcommand] [arguments] [flags]
 | 命令 | 关键选项 | 说明 |
 | --- | --- | --- |
 | `pi info` / `i` | | 名称/显示名/版本/协议版本/控制器数/资源数/任务数/分组数/预设数/语言列表/是否声明 agent、pretask、telemetry |
-| `pi validate` / `v` | `-st/--strict` | 默认只报错误；`-st` 把「资源路径不存在」「hash 不匹配」「当前平台不支持的控制器」也视为错误 |
+| `pi validate` / `v` | `-st/--strict` | 默认只报错误；`-st` 把「资源路径不存在」「当前平台不支持的控制器」也视为错误（hash 校验不在此处，由运行期 `-rh/--require-resource-hash` 控制） |
 | `pi controllers` / `c` | `-ty/--type <Adb\|Win32\|...>` | 显示 `name/label/type/是否可运行/引用它的资源数` |
 | `pi tasks` / `t` | `-c` `-r` `-gr/--group` `-all/--all` | 显示 `name/label/entry/group/option 数`；默认隐藏与当前 controller/resource 不兼容的 task，`-all` 显示并标注 `reason` |
 | `pi groups` / `g` | | 分组 `name/label/default_expand/任务数` |
@@ -386,7 +387,7 @@ run (r): 运行 task、preset 或节点
 | `linux.*` | Linux（wlroots）Wayland socket 等 |
 | `option` | 全局配置项取值（结构同 §7.5 的严格 JSON） |
 | `task[].name` + `task[].option` | 按任务保存的配置项取值 |
-| `task[].enabled` | 任务勾选状态（`run preset` 时作为补充） |
+| `task[].enabled` | 任务勾选状态（仅记录与展示；`run preset` 不使用，见 §11） |
 
 未知字段（如 MFAA 的 `__key`）忽略。`--no-config` 完全跳过；`--explain` 与
 `config show` 会打印每个默认值的来源（`cli` / `config` / `preset` / `default`）。
@@ -438,7 +439,17 @@ run (r): 运行 task、preset 或节点
 
 - `telemetry` / `focus.trace` 遥测上报（CLI 不上报遥测，`pi info` 仅提示已声明）；
 - `display: modal` 的阻塞确认（CLI 只打印，不等待输入）；
-- 写回客户端配置文件（`config set`）——配置文件由用户的 GUI 客户端负责写入。
+- 写回客户端配置文件（`config set`）——配置文件由用户的 GUI 客户端负责写入；
+- `run task` / `run preset` 会接受 `-pa`/`--path` 但静默忽略（该选项只在 `run node` 生效）；
+  改成报错会改变退出码，属 BREAKING，待决策；
+- `resource list` 会接受从 `resource` 组继承的 `-r`/`-pa`/`-ol` 但静默忽略（只读 `-c`）；
+  改成报错同样属 BREAKING，待决策；
+- 客户端配置里的 `task[].enabled` 不影响 `run preset`（当前仅记录与展示；若改为兜底会改变执行行为）；
+- `controller.permission_required` 目前只在声明为真时打一条 stderr 提示，未实际提权；
+- Linux（wlroots）下 `use_win32_vk_code` 的热键键码映射未实现（当前会在运行期失败）；
+- `-e all` 看不到 `Resource.Loading` 与连接期 `Controller.Action` 事件（sink 注册时机晚于资源加载与连接）；
+- 未知 option 字段（例如 `--option X.tokne=y` 这类拼写错误）被静默忽略，未报错；
+- npm 下载产物无哈希或签名锚点（需 release 侧先产出 SHA-256 清单）；`MAACTL_MIRROR` 允许明文 `http`。
 
 ## 12. 与旧版对照（迁移）
 
