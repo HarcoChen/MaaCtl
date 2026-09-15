@@ -212,7 +212,7 @@ func writeFlags(b *strings.Builder, cmd *cobra.Command) {
 	for _, section := range sectionOrder {
 		writeFlagGroup(b, sectionTitle(section), groups[section])
 	}
-	global = append(global, helpFlag(cmd))
+	global = append(global, syntheticHelpFlag())
 	writeFlagGroup(b, i18n.Text("Global:", "全局选项："), global)
 }
 
@@ -288,17 +288,10 @@ func defaultSuffix(f *pflag.Flag) string {
 	return i18n.Text(" (default "+def+")", "（默认 "+def+"）")
 }
 
-// helpFlag returns the flag that -h and --help actually set. Cobra installs it
-// before the command runs, so rendering it keeps this page and the parser in
-// step; a fresh flag is synthesized only when the page is rendered before cobra
-// created one.
-func helpFlag(cmd *cobra.Command) *pflag.Flag {
-	if flag := cmd.Flags().Lookup("help"); flag != nil {
-		return flag
-	}
-	return syntheticHelpFlag()
-}
-
+// syntheticHelpFlag builds the -h/--help entry this renderer prints. Cobra
+// installs a help flag of its own, but its description is an untranslated
+// "help for <command>", which would put an English fragment on every localized
+// page, so the page always renders this localized flag instead.
 func syntheticHelpFlag() *pflag.Flag {
 	flags := pflag.NewFlagSet("help", pflag.ContinueOnError)
 	flags.BoolP("help", "h", false, i18n.Text("show help", "显示帮助"))

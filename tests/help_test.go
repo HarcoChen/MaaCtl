@@ -333,6 +333,46 @@ func TestChineseHelpSections(t *testing.T) {
 	}
 }
 
+// The -h/--help entry must stay localized. Cobra installs a help flag whose
+// description is an untranslated "help for <command>", and rendering that
+// instead puts an English fragment on every page, so the renderer keeps its own
+// localized flag: this test pins that for both languages.
+func TestHelpFlagLineStaysLocalized(t *testing.T) {
+	commands := [][]string{
+		{},
+		{"pi"},
+		{"pi", "tasks"},
+		{"resource"},
+		{"resource", "list"},
+		{"device"},
+		{"run"},
+		{"run", "task"},
+		{"config"},
+		{"config", "show"},
+		{"version"},
+		{"selfcheck"},
+	}
+	t.Setenv("MAACTL_LANG", "zh_CN")
+	for _, parts := range commands {
+		args := append(append([]string{}, parts...), "-h")
+		out := mustHelp(t, args...)
+		if !strings.Contains(out, "显示帮助") {
+			t.Errorf("%v -h lost the localized help flag\n%s", parts, out)
+		}
+		if strings.Contains(out, "help for ") {
+			t.Errorf("%v -h leaked cobra's English help flag text\n%s", parts, out)
+		}
+	}
+	t.Setenv("MAACTL_LANG", "en_US.UTF-8")
+	out := mustHelp(t, "pi", "-h")
+	if !strings.Contains(out, "show help") {
+		t.Errorf("English help lost the help flag\n%s", out)
+	}
+	if strings.Contains(out, "help for ") {
+		t.Errorf("English help leaked cobra's help flag text\n%s", out)
+	}
+}
+
 func TestEnglishHelpStaysEnglish(t *testing.T) {
 	t.Setenv("MAACTL_LANG", "en_US.UTF-8")
 	out := mustHelp(t, "run", "-h")
