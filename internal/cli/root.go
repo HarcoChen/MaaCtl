@@ -63,7 +63,7 @@ device 列出设备与窗口，run 执行任务，config 显示客户端配置�
 	}
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return withExitCode(ExitUsage, err) })
 	root.PersistentFlags().StringVarP(&global.InterfacePath, "interface", "f", "", i18n.Text("ProjectInterface file or project directory (default: ./interface.json)", "ProjectInterface 文件或项目目录（默认：./interface.json）"))
-	root.PersistentFlags().StringVarP(&global.LibDir, "lib-dir", "l", "", i18n.Text("MaaFramework DLL directory (default: ./maafw/bin)", "MaaFramework DLL 目录（默认：./maafw/bin）"))
+	root.PersistentFlags().StringVarP(&global.LibDir, "lib-dir", "l", "", i18n.Text("MaaFramework library directory (default: ./maafw/bin)", "MaaFramework 运行库目录（默认：./maafw/bin）"))
 	root.PersistentFlags().BoolVarP(&global.JSON, "json", "j", false, i18n.Text("output JSON; run emits sink events as JSON", "输出 JSON；运行时 sink 事件也输出 JSON"))
 	root.PersistentFlags().StringVar(&global.Lang, "lang", "", i18n.Text("language for PI labels, e.g. zh_cn or en_us (default: system)", "解析 PI label 的语言，如 zh_cn 或 en_us（默认：跟随系统）"))
 	root.PersistentFlags().StringVar(&global.ConfigPath, "config", "", i18n.Text("client configuration file (default: <PI>/config/maa_pi_config.json)", "客户端配置文件（默认：<PI>/config/maa_pi_config.json）"))
@@ -82,6 +82,7 @@ device 列出设备与窗口，run 执行任务，config 显示客户端配置�
 		newRunCommand(&global),
 		newConfigCommand(&global),
 		newVersionCommand(version),
+		newSelfCheckCommand(&global),
 	)
 	root.AddCommand(newLegacyDeviceCommands(&global)...)
 

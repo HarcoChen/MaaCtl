@@ -49,6 +49,32 @@ type Win32 struct {
 	Keyboard    string `json:"keyboard,omitempty"`
 }
 
+// MacOS holds the saved macOS window selection and methods. WindowID is the
+// CGWindowID MaaFramework drives; 0 means the whole desktop.
+type MacOS struct {
+	WindowID   uint64 `json:"window_id,omitempty"`
+	TitleRegex string `json:"title_regex,omitempty"`
+	Screencap  string `json:"screencap,omitempty"`
+	Input      string `json:"input,omitempty"`
+}
+
+// PlayCover holds the saved PlayTools service address and bundle identifier.
+type PlayCover struct {
+	Address string `json:"address,omitempty"`
+	UUID    string `json:"uuid,omitempty"`
+}
+
+// Linux holds the saved Linux controller details. Only WlrSocketPath is used
+// today: it names the Wayland socket of the compositor, and the fields the
+// newer MaaLinuxControllerCreate reads are kept so a config written by another
+// client round-trips unchanged.
+type Linux struct {
+	WlrSocketPath string `json:"wlr_socket_path,omitempty"`
+	UInputWidth   int    `json:"uinput_screen_width,omitempty"`
+	UInputHeight  int    `json:"uinput_screen_height,omitempty"`
+	EisSocketPath string `json:"eis_socket_path,omitempty"`
+}
+
 // Task holds the saved state of one task.
 type Task struct {
 	Name    string         `json:"name"`
@@ -63,6 +89,9 @@ type Config struct {
 	Resource   string         `json:"resource,omitempty"`
 	Adb        Adb            `json:"adb,omitempty"`
 	Win32      Win32          `json:"win32,omitempty"`
+	MacOS      MacOS          `json:"macos,omitempty"`
+	PlayCover  PlayCover      `json:"playcover,omitempty"`
+	Linux      Linux          `json:"linux,omitempty"`
 	Option     map[string]any `json:"option,omitempty"`
 	Task       []Task         `json:"task,omitempty"`
 

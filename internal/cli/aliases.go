@@ -59,6 +59,16 @@ var flagAliases = []flagAlias{
 	{"of", "option-file"},
 	{"ovf", "override-file"},
 
+	// Platform-specific targets: macOS, PlayCover, and Linux controllers.
+	{"mw", "macos-window"},
+	{"mid", "macos-window-id"},
+	{"ms", "macos-screencap"},
+	{"mi", "macos-input"},
+	{"pca", "playcover-address"},
+	{"pcu", "playcover-uuid"},
+	{"ls", "linux-socket"},
+	{"lv", "linux-vk"},
+
 	// Run control.
 	{"fd", "focus-display"},
 	{"dr", "dry-run"},

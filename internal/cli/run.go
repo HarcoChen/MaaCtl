@@ -40,6 +40,17 @@ type runOptions struct {
 	win32Keyboard  string
 	gamepadType    string
 
+	macosWindow    string
+	macosWindowID  string
+	macosScreencap string
+	macosInput     string
+
+	playcoverAddress string
+	playcoverUUID    string
+
+	linuxSocket string
+	linuxVK     bool
+
 	optionValues []string
 	optionFile   string
 	preset       string
@@ -179,6 +190,14 @@ func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
 	flags.StringVar(&opt.win32Mouse, "win32-mouse", "", i18n.Text("Win32 mouse method (default: PI config, then Seize)", "Win32 鼠标方式（默认：PI 配置，其次 Seize）"))
 	flags.StringVar(&opt.win32Keyboard, "win32-keyboard", "", i18n.Text("Win32 keyboard method (default: PI config, then Seize)", "Win32 键盘方式（默认：PI 配置，其次 Seize）"))
 	flags.StringVar(&opt.gamepadType, "gamepad-type", "", i18n.Text("Gamepad type: Xbox360 or DualShock4", "Gamepad 类型：Xbox360 或 DualShock4"))
+	flags.StringVar(&opt.macosWindow, "macos-window", "", i18n.Text("macOS window title regex (default: PI macos.title_regex)", "macOS 窗口标题正则（默认：PI macos.title_regex）"))
+	flags.StringVar(&opt.macosWindowID, "macos-window-id", "", i18n.Text("macOS window id from \"maactl device window\"", "macOS 窗口 id，取自 \"maactl device window\""))
+	flags.StringVar(&opt.macosScreencap, "macos-screencap", "", i18n.Text("macOS screencap method (default: PI config, then ScreenCaptureKit)", "macOS 截图方式（默认：PI 配置，其次 ScreenCaptureKit）"))
+	flags.StringVar(&opt.macosInput, "macos-input", "", i18n.Text("macOS input method: GlobalEvent or PostToPid (default: PI config, then GlobalEvent)", "macOS 输入方式：GlobalEvent 或 PostToPid（默认：PI 配置，其次 GlobalEvent）"))
+	flags.StringVar(&opt.playcoverAddress, "playcover-address", "", i18n.Text("PlayTools service address (default: config playcover.address)", "PlayTools 服务地址（默认：配置 playcover.address）"))
+	flags.StringVar(&opt.playcoverUUID, "playcover-uuid", "", i18n.Text("PlayCover bundle identifier (default: PI playcover.uuid, then maa.playcover)", "PlayCover 应用标识（默认：PI playcover.uuid，其次 maa.playcover）"))
+	flags.StringVar(&opt.linuxSocket, "linux-socket", "", i18n.Text("Wayland socket of the compositor (default: config, then $WAYLAND_DISPLAY)", "合成器的 Wayland socket（默认：配置，其次 $WAYLAND_DISPLAY）"))
+	flags.BoolVar(&opt.linuxVK, "linux-vk", false, i18n.Text("treat Linux key codes as Win32 virtual-key codes", "把 Linux 按键视为 Win32 Virtual-Key 键码"))
 	flags.StringArrayVar(&opt.optionValues, "option", nil, i18n.Text("name=value, name=a,b, or name.field=value; repeatable", "name=value、name=a,b 或 name.field=value；可重复"))
 	flags.StringVar(&opt.optionFile, "option-file", "", i18n.Text("JSON file of option values", "包含配置项取值的 JSON 文件"))
 	flags.StringVarP(&opt.preset, "preset", "p", "", i18n.Text("apply this preset's values to the task", "把该 preset 的取值应用到 task"))
@@ -200,7 +219,10 @@ func addRunFlags(flags *pflag.FlagSet, opt *runOptions) {
 	help.MarkFlagsSection(flags, help.SectionTarget,
 		"resource", "controller", "adb-address", "name", "adb-path",
 		"win32-handle", "win32-class", "win32-window", "win32-screencap", "win32-mouse", "win32-keyboard",
-		"gamepad-type")
+		"gamepad-type",
+		"macos-window", "macos-window-id", "macos-screencap", "macos-input",
+		"playcover-address", "playcover-uuid",
+		"linux-socket", "linux-vk")
 	help.MarkFlagsSection(flags, help.SectionOptions,
 		"option", "option-file", "preset", "override", "override-file")
 	help.MarkFlagsSection(flags, help.SectionResources,

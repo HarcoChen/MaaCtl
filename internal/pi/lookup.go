@@ -200,6 +200,12 @@ func platformName() string {
 	}
 }
 
+// PlatformName names the platform this build of maactl runs on, which decides
+// which controller types it can create.
+func PlatformName() string {
+	return platformName()
+}
+
 // JoinControllerNames returns the comma-separated names of controllers.
 func JoinControllerNames(items []Controller) string {
 	names := make([]string, len(items))

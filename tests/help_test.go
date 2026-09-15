@@ -41,6 +41,25 @@ func mustHelp(t *testing.T, args ...string) string {
 	return out
 }
 
+// countFlagMentions counts how often a flag is documented, ignoring longer
+// flags that merely start with it (--macos-window is part of
+// --macos-window-id).
+func countFlagMentions(help, flag string) int {
+	count := 0
+	for i := 0; i < len(help); {
+		j := strings.Index(help[i:], flag)
+		if j < 0 {
+			break
+		}
+		end := i + j + len(flag)
+		if end >= len(help) || help[end] == ' ' || help[end] == '=' || help[end] == '<' {
+			count++
+		}
+		i = end
+	}
+	return count
+}
+
 func TestRootHelpIsCompactOverview(t *testing.T) {
 	out := mustHelp(t, "-h")
 	for _, want := range []string{
@@ -174,7 +193,7 @@ func TestRunHelpDocumentsWin32Flags(t *testing.T) {
 		"--win32-screencap", "--win32-mouse", "--win32-keyboard",
 		"--gamepad-type",
 	} {
-		if n := strings.Count(runHelp, flag); n != 1 {
+		if n := countFlagMentions(runHelp, flag); n != 1 {
 			t.Errorf("win32 flag %s listed %d times in run help\n%s", flag, n, runHelp)
 		}
 	}
@@ -182,6 +201,21 @@ func TestRunHelpDocumentsWin32Flags(t *testing.T) {
 	for _, flag := range []string{"--win32-handle", "--win32-screencap"} {
 		if !strings.Contains(taskHelp, flag) {
 			t.Errorf("win32 flag %s missing from run task help\n%s", flag, taskHelp)
+		}
+	}
+}
+
+// Every platform's controller flags are documented, so a macOS or Linux user
+// finds them without reading the source.
+func TestRunHelpDocumentsPlatformFlags(t *testing.T) {
+	runHelp := mustHelp(t, "run", "-h")
+	for _, flag := range []string{
+		"--macos-window", "--macos-window-id", "--macos-screencap", "--macos-input",
+		"--playcover-address", "--playcover-uuid",
+		"--linux-socket", "--linux-vk",
+	} {
+		if n := countFlagMentions(runHelp, flag); n != 1 {
+			t.Errorf("platform flag %s listed %d times in run help\n%s", flag, n, runHelp)
 		}
 	}
 }
@@ -222,7 +256,7 @@ func TestEveryCommandHasAShortAlias(t *testing.T) {
 		"maactl":          {"pi, if, interface", "resource, res", "device, dev", "run, r", "config, cfg", "version, ver"},
 		"maactl pi":       {"info, i", "validate, v", "controllers, c", "tasks, t", "groups, g", "options, o", "presets, p", "settings, s"},
 		"maactl resource": {"list, l", "inspect, i", "nodes, n", "hash, h"},
-		"maactl device":   {"adb, a", "win32, w"},
+		"maactl device":   {"adb, a", "window, w, win32"},
 		"maactl run":      {"task, t <task-name>", "preset, p <preset-name>", "node, n <node-name>"},
 		"maactl config":   {"path, p", "show, s"},
 	}
