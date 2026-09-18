@@ -13,7 +13,7 @@
 //
 //	go run ./tools/packmaafw                      # maafw/bin, version pinned in maafw.version
 //	go run ./tools/packmaafw -dir /tmp/maa/bin    # runtime unpacked elsewhere
-//	go run ./tools/packmaafw -platform win-x86_64 -version v5.14.0   # assert both (CI does this)
+//	go run ./tools/packmaafw -platform win-x86_64 -version v5.13.1   # assert both (CI does this)
 package main
 
 import (
@@ -131,9 +131,9 @@ func resolveVersion(value string) (string, error) {
 		version = strings.TrimSpace(string(pinned))
 	}
 	if version == "" {
-		return "", fmt.Errorf("%s is empty; write the MaaFramework release tag into it, e.g. v5.13.0", versionFile)
+		return "", fmt.Errorf("%s is empty; write the MaaFramework release tag into it, e.g. v5.13.1", versionFile)
 	}
-	// Accept both "5.13.0" and the tagged form "v5.13.0".
+	// Accept both "5.13.1" and the tagged form "v5.13.1".
 	if !strings.HasPrefix(version, "v") {
 		version = "v" + version
 	}
@@ -180,7 +180,7 @@ func parseFlags() options {
 	flags.StringVar(&opts.dir, "dir", pack.Dir, "MaaFramework runtime directory, as unpacked from a release archive")
 	flags.StringVar(&opts.out, "out", defaultOut, "directory receiving "+containerName+", "+versionName+", and "+platformName)
 	flags.StringVar(&opts.platform, "platform", "", "assert the platform being packed, e.g. win-x86_64 (default: the platform this tool runs on)")
-	flags.StringVar(&opts.version, "version", "", "MaaFramework release tag, e.g. v5.13.0 (default: read from "+versionFile+")")
+	flags.StringVar(&opts.version, "version", "", "MaaFramework release tag, e.g. v5.13.1 (default: read from "+versionFile+")")
 	flags.Parse(os.Args[1:])
 	return opts
 }

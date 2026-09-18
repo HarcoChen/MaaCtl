@@ -148,7 +148,7 @@ test('verifyBinary accepts an executable that reports its version', () => {
   binary.verifyBinary(fake, {
     spawn: (file, args) => {
       calls.push([file, args]);
-      return { status: 0, stdout: 'maactl version 1.2.3 (MaaFramework v5.13.0)' };
+      return { status: 0, stdout: 'maactl version 1.2.3 (MaaFramework v5.13.1)' };
     },
   });
 

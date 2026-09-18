@@ -146,6 +146,39 @@ func TestDefaultCaseForms(t *testing.T) {
 	}
 }
 
+// TestWelcomeForms verifies the single-string and the array form of `welcome`
+// (v2.10.0 added multi-announcement lists), including the round trip, which
+// keeps a one-element list as the string form MaaPiCli still accepts.
+func TestWelcomeForms(t *testing.T) {
+	var doc struct {
+		Single pi.Welcome `json:"single"`
+		Many   pi.Welcome `json:"many"`
+		Absent pi.Welcome `json:"absent"`
+	}
+	if err := json.Unmarshal([]byte(`{"single":"hi","many":["a","b"]}`), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Single) != 1 || doc.Single[0] != "hi" {
+		t.Errorf("single = %+v", doc.Single)
+	}
+	if len(doc.Many) != 2 || doc.Many[1] != "b" {
+		t.Errorf("many = %+v", doc.Many)
+	}
+	if doc.Absent != nil {
+		t.Errorf("absent should be nil: %+v", doc.Absent)
+	}
+	encoded, err := json.Marshal(struct {
+		Single pi.Welcome `json:"single"`
+		Many   pi.Welcome `json:"many"`
+	}{doc.Single, doc.Many})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(encoded) != `{"single":"hi","many":["a","b"]}` {
+		t.Errorf("round trip = %s", encoded)
+	}
+}
+
 // TestTranslatorResolvesLabels checks language negotiation, `$` resolution, and
 // the JSON-wide resolution used for PI_* agent environment variables.
 func TestTranslatorResolvesLabels(t *testing.T) {

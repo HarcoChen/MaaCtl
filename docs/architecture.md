@@ -35,7 +35,7 @@ maafw/                 本地 MaaFramework 运行库（不入库，CI 在每个�
 
 | 文件 | 内容 |
 | --- | --- |
-| `model.go` | PI v2.10.1 全字段模型、保序 `OptionMap`、`DefaultCase`、`agent`/`pretask` 的单对象或数组 |
+| `model.go` | PI v2.10.1 全字段模型、保序 `OptionMap`、`DefaultCase`、`welcome`、`agent`/`pretask` 的单对象或数组 |
 | `load.go` | 文件/目录解析、JSONC、按协议的 import 收集与合并顺序 |
 | `i18n.go` | `languages` 协商与 `$label` 解析（含对 JSON 值整体解析，供 `PI_*` 使用） |
 | `lookup.go` | 控制器/资源/任务/preset/group 解析、适用性判断、平台可运行类型 |

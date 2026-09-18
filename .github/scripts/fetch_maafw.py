@@ -7,7 +7,7 @@ platform it is building for here, before packing.
 
 Usage:
     python fetch_maafw.py --platform win-x86_64
-    python fetch_maafw.py --platform linux-aarch64 --version v5.13.0 --dest maafw
+    python fetch_maafw.py --platform linux-aarch64 --version v5.13.1 --dest maafw
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ def resolve_version(explicit: str, version_file: Path) -> str:
             raise SystemExit(f"error: no --version and {version_file} does not exist")
         version = version_file.read_text(encoding="utf-8").strip()
     if not version:
-        raise SystemExit(f"error: {version_file} is empty; write the MaaFramework release tag into it, e.g. v5.13.0")
+        raise SystemExit(f"error: {version_file} is empty; write the MaaFramework release tag into it, e.g. v5.13.1")
     return version if version.startswith("v") else f"v{version}"
 
 
@@ -181,7 +181,7 @@ def verify(dest: Path, platform: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--platform", required=True, choices=sorted(PLATFORMS), help="MaaFramework platform id, e.g. win-x86_64")
-    parser.add_argument("--version", default="", help=f"MaaFramework tag, e.g. v5.13.0 (default: read from {DEFAULT_VERSION_FILE})")
+    parser.add_argument("--version", default="", help=f"MaaFramework tag, e.g. v5.13.1 (default: read from {DEFAULT_VERSION_FILE})")
     parser.add_argument("--dest", default=DEFAULT_DEST, help=f"directory receiving the release (default: {DEFAULT_DEST})")
     parser.add_argument("--repo", default=DEFAULT_REPO, help=f"repository publishing the release (default: {DEFAULT_REPO})")
     parser.add_argument("--version-file", default=DEFAULT_VERSION_FILE, help=f"file pinning the version (default: {DEFAULT_VERSION_FILE})")

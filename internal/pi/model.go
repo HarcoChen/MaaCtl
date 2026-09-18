@@ -26,7 +26,7 @@ type ProjectInterface struct {
 	Version          string            `json:"version,omitempty"`
 	Contact          string            `json:"contact,omitempty"`
 	License          string            `json:"license,omitempty"`
-	Welcome          string            `json:"welcome,omitempty"`
+	Welcome          Welcome           `json:"welcome,omitempty"`
 	Description      string            `json:"description,omitempty"`
 	Telemetry        *Telemetry        `json:"telemetry,omitempty"`
 	Controller       []Controller      `json:"controller"`
@@ -40,6 +40,31 @@ type ProjectInterface struct {
 	Setting          []Setting         `json:"setting,omitempty"`
 	Import           []string          `json:"import,omitempty"`
 	Preset           []Preset          `json:"preset,omitempty"`
+}
+
+// Welcome holds PI's welcome message, which doubles as the announcement list.
+// The protocol (v2.10.0+) allows either one string or an ordered array of
+// strings, so a project can ship several announcements; both forms decode into
+// this slice, and MarshalJSON restores the shape the project used.
+//
+// maactl never displays it: the window belongs to MaaPiCli. The field is
+// decoded so that a file maactl accepts is never one it silently truncates.
+type Welcome []string
+
+// UnmarshalJSON accepts both the single-string and the array form.
+func (w *Welcome) UnmarshalJSON(data []byte) error {
+	texts, err := unmarshalOneOrMany[string](data)
+	*w = texts
+	return err
+}
+
+// MarshalJSON emits the single-string form for a one-element list, keeping a
+// round trip faithful to the original file.
+func (w Welcome) MarshalJSON() ([]byte, error) {
+	if len(w) == 1 {
+		return json.Marshal(w[0])
+	}
+	return json.Marshal([]string(w))
 }
 
 // Telemetry is PI's anonymous telemetry configuration. maactl does not report

@@ -338,7 +338,7 @@ maactl -v
 
 ```bash
 maactl selfcheck
-# MaaFramework v5.13.0 (linux-x86_64, bundled) from /home/me/.cache/maactl/maafw/linux-x86_64-v5.13.0/bin
+# MaaFramework v5.13.1 (linux-x86_64, bundled) from /home/me/.cache/maactl/maafw/linux-x86_64-v5.13.1/bin
 ```
 
 它按与其它命令相同的方式加载 MaaFramework（`-lib`/`--lib-dir` → 自带运行库 → `./maafw/bin`），

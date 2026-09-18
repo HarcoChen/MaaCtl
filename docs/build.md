@@ -74,7 +74,7 @@ MaaFramework，打印实际加载到的版本与来源，失败则返回非零�
 
 ```bash
 ./maactl selfcheck
-# MaaFramework v5.13.0 (linux-x86_64, bundled) from /home/me/.cache/maactl/maafw/linux-x86_64-v5.13.0/bin
+# MaaFramework v5.13.1 (linux-x86_64, bundled) from /home/me/.cache/maactl/maafw/linux-x86_64-v5.13.1/bin
 ```
 
 CI 在每个平台上都跑这个命令，因此“包里带了运行库”不是靠肉眼确认的。
@@ -90,7 +90,7 @@ CI 在每个平台上都跑这个命令，因此“包里带了运行库”不�
 # 1. 准备运行库：CI 用脚本下载，本地可以自己解压 release 压缩包
 python3 .github/scripts/fetch_maafw.py --platform win-x86_64   # 解包到 maafw/
 # 或
-Expand-Archive MAA-win-x86_64-v5.13.0.zip -DestinationPath maafw
+Expand-Archive MAA-win-x86_64-v5.13.1.zip -DestinationPath maafw
 
 # 2. 生成 payload（缺失运行库、平台不匹配都会直接失败）
 go run ./tools/packmaafw                                           # 用 maafw/bin
@@ -120,7 +120,7 @@ macOS 的运行库打进 Windows 的 exe；显式指定 `-platform` 时还要求
 `maactl` 会明确报错并回退到 `./maafw/bin`，不会去加载错误的运行库。自带版本会显示在版本信息里：
 
 ```bash
-./maactl --version       # maactl version 0.1.1 (MaaFramework v5.13.0)
+./maactl --version       # maactl version 0.1.1 (MaaFramework v5.13.1)
 ./maactl-lite --version  # maactl version 0.1.1
 ```
 
@@ -136,7 +136,7 @@ macOS 的运行库打进 Windows 的 exe；显式指定 `-platform` 时还要求
 go run ./tools/packmaafw
 go build -tags bundled -ldflags "-X main.version=1.2.3-beta.1" -o maactl ./cmd/maactl
 go build -ldflags "-X main.version=1.2.3-beta.1" -o maactl-lite ./cmd/maactl
-./maactl --version             # maactl version 1.2.3-beta.1 (MaaFramework v5.13.0)
+./maactl --version             # maactl version 1.2.3-beta.1 (MaaFramework v5.13.1)
 ./maactl-lite --version        # maactl version 1.2.3-beta.1
 ```
 

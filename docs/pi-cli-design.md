@@ -413,6 +413,7 @@ run (r): 运行 task、preset 或节点
 | `hotkey` | v2.8.0 | `--option`/`--option-file` 取值，按控制器类型转按键码 |
 | `telemetry` | v2.9.0 | **不实现**（CLI 不上报遥测）；`pi info` 标注「已声明，未启用」 |
 | `focus.trace` | v2.9.1 | 不实现遥测，读入后忽略 |
+| `welcome` 字符串或字符串数组（多公告） | v2.10.0 | 读入两种写法；CLI 不展示（弹窗属于 MaaPiCli） |
 | `password` 输入字段 | v2.10.0 | 掩码、禁止 `default`、拒绝明文日志 |
 | `checkbox.min_count`/`max_count` | v2.10.1 | 校验 |
 
