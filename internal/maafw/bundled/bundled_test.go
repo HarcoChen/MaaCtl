@@ -11,38 +11,24 @@ import (
 	"maactl/internal/platform"
 )
 
-func TestCompatibleOnlyAcceptsTheHostPlatform(t *testing.T) {
-	host := platform.Host().ID()
-	if !compatible(payload{container: []byte("zip"), target: host}) {
-		t.Errorf("a payload for %s must be usable on %s", host, host)
+func TestCacheIDSeparatesPayloads(t *testing.T) {
+	first := cacheID(payload{container: []byte("zip")})
+	second := cacheID(payload{container: []byte("other zip")})
+	if first == second {
+		t.Fatal("two different payloads must not share a cache directory")
 	}
-	// A payload packed before the platform marker existed carries no target, and
-	// is trusted so that upgrading maactl does not invalidate it.
-	if !compatible(payload{container: []byte("zip")}) {
-		t.Error("a payload without a platform marker must be accepted")
+	for _, id := range []string{first, second} {
+		if !strings.HasPrefix(id, platform.Host().ID()+"-") {
+			t.Errorf("cacheID = %q, want the host platform followed by a digest", id)
+		}
+		if strings.ContainsAny(id, `/:\`) {
+			t.Errorf("cacheID = %q is not path safe", id)
+		}
 	}
-	other := platform.Target{OS: platform.Linux, Arch: platform.AMD64}
-	if other.ID() == host {
-		other = platform.Target{OS: platform.Windows, Arch: platform.AArch64}
-	}
-	if compatible(payload{container: []byte("zip"), target: other.ID()}) {
-		t.Errorf("a payload for %s must not be usable on %s", other.ID(), host)
-	}
-}
-
-func TestCacheIDNamesThePlatformAndVersion(t *testing.T) {
-	id := cacheID(payload{container: []byte("zip"), version: "v5.13.0", target: "win-x86_64"})
-	if id != "win-x86_64-v5.13.0" {
-		t.Errorf("cacheID = %q, want win-x86_64-v5.13.0", id)
-	}
-	// Without a version the payload hash keeps two builds apart, and the name
-	// stays usable as a directory name on every platform.
-	hashed := cacheID(payload{container: []byte("zip"), target: "linux-aarch64"})
-	if !strings.HasPrefix(hashed, "linux-aarch64-") || len(hashed) != len("linux-aarch64-")+16 {
-		t.Errorf("cacheID = %q, want the platform followed by a short hash", hashed)
-	}
-	if strings.ContainsAny(hashed, `/\:`) {
-		t.Errorf("cacheID = %q is not path safe", hashed)
+	// The same payload always names the same directory, so the extraction is
+	// reused instead of being redone on every run.
+	if again := cacheID(payload{container: []byte("zip")}); again != first {
+		t.Errorf("cacheID is not stable: %q then %q", first, again)
 	}
 	if cacheID(payload{}) != "" {
 		t.Error("a build without a payload must not name a cache directory")

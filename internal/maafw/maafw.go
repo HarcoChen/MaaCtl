@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"maactl/internal/maafw/bundled"
 	"maactl/internal/platform"
 
 	maa "github.com/MaaXYZ/maa-framework-go/v4"
@@ -35,22 +34,19 @@ func Init(libDir, logDir string) error {
 // can avoid calling into it from tests or from query-only commands.
 var loaded atomic.Bool
 
-// Version returns the MaaFramework version of the loaded runtime, falling back
-// to the version this build bundles when the runtime is not initialized yet.
+// Version returns the version of the loaded MaaFramework runtime, read from the
+// library itself through its exported API. It returns "" while no runtime is
+// initialized, which is why the commands that report a version initialize one
+// first (`selfcheck`).
+//
+// maactl deliberately keeps no MaaFramework version of its own: whatever the
+// loaded libraries report is the truth, so upgrading the runtime never touches
+// Go code.
 func Version() string {
 	if !loaded.Load() {
-		return BundledVersion()
-	}
-	return maa.Version()
-}
-
-// BundledVersion returns the MaaFramework version carried by this build, or ""
-// when the build does not embed MaaFramework.
-func BundledVersion() string {
-	if !bundled.Available() {
 		return ""
 	}
-	return bundled.Version()
+	return maa.Version()
 }
 
 // ResolveLibDir returns the directory to load MaaFramework from.

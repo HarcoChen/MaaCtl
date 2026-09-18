@@ -338,11 +338,12 @@ maactl -v
 
 ```bash
 maactl selfcheck
-# MaaFramework v5.13.1 (linux-x86_64, bundled) from /home/me/.cache/maactl/maafw/linux-x86_64-v5.13.1/bin
+# MaaFramework v5.13.1 (linux-x86_64, bundled) from /home/me/.cache/maactl/maafw/linux-x86_64-1f2a3b4c5d6e7f80/bin
 ```
 
 它按与其它命令相同的方式加载 MaaFramework（`-lib`/`--lib-dir` → 自带运行库 → `./maafw/bin`），
-打印实际加载到的版本、平台与来源；加载失败时以退出码 1 结束。用于区分“运行库有问题”与
+打印实际加载到的版本、平台与来源；加载失败时以退出码 1 结束。版本号取自运行库导出的接口，
+项目里没有内置的版本字符串，所以 `--version` 只报告 maactl 自己的版本。用于区分“运行库有问题”与
 “项目/设备有问题”，CI 也在每个平台上跑它。它不出现在 `-h` 里。
 
 ## 迁移对照（第一版 → 第二版）

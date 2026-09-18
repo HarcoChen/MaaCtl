@@ -8,7 +8,6 @@ import (
 	"maactl/internal/clientconfig"
 	"maactl/internal/help"
 	"maactl/internal/i18n"
-	"maactl/internal/maafw"
 	"maactl/internal/pi"
 
 	"github.com/spf13/cobra"
@@ -43,7 +42,7 @@ func NewRootCommand(version string) *cobra.Command {
 	var global GlobalOptions
 	root := &cobra.Command{
 		Use:     "maactl",
-		Version: versionLabel(version),
+		Version: version,
 		Short:   i18n.Text("MaaFramework and ProjectInterface command-line client", "MaaFramework 与 ProjectInterface 命令行客户端"),
 		Long: i18n.Text(`MaaCtl loads ProjectInterface v2 projects, inspects MaaFramework resources,
 and runs Pipeline tasks.
@@ -154,16 +153,10 @@ func (g *GlobalOptions) LoadConfig(project *pi.Loaded) (*clientconfig.Config, st
 	return config, path, nil
 }
 
-// versionLabel appends the bundled MaaFramework version so users can tell which
-// runtime a self-contained executable carries.
-func versionLabel(version string) string {
-	if bundled := maafw.BundledVersion(); strings.TrimSpace(bundled) != "" {
-		return fmt.Sprintf("%s (MaaFramework %s)", version, bundled)
-	}
-	return version
-}
-
 // newVersionCommand prints the version, mirroring the root --version flag.
+// It deliberately reports only maactl's own version: the MaaFramework version
+// belongs to the runtime, not to the build, and reading it would mean loading
+// the libraries—which `selfcheck` does.
 func newVersionCommand(version string) *cobra.Command {
 	return &cobra.Command{
 		Use:     "version",
@@ -171,7 +164,7 @@ func newVersionCommand(version string) *cobra.Command {
 		Short:   i18n.Text("Print version information", "显示版本信息"),
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fmt.Fprintln(cmd.OutOrStdout(), "maactl version "+versionLabel(version))
+			fmt.Fprintln(cmd.OutOrStdout(), "maactl version "+version)
 			return nil
 		},
 	}

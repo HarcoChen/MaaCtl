@@ -5,9 +5,9 @@
 
 1. `version`：校验 tag 是否符合 SemVer，计算是否预发布、预发布通道和上一个正式版 tag；
 2. `build`：**每个平台一个 runner**（见下表），每个 job 都执行同一套步骤：
-   - `.github/scripts/fetch_maafw.py --platform <平台>` 下载对应平台的 MaaFramework release
-     并解包到 `maafw/`（换平台会整目录替换，不会留下上一个平台的运行库）；
-   - `go run ./tools/packmaafw -platform <平台>` 从 `maafw/bin` 生成 payload；
+   - `.github/scripts/fetch_maafw.py --platform <平台> --version <MaaFramework 版本>` 下载对应平台的
+     MaaFramework release 并解包到 `maafw/`（换平台会整目录替换，不会留下上一个平台的运行库）；
+   - `go run ./tools/packmaafw` 把 `maafw/bin` 原样（不看版本与平台）打成 payload；
    - `go test ./...` 与 `go test -tags bundled ./...`；
    - `.github/scripts/build_release.py` 构建并**实际运行**两个 exe 校验（自带版必须报告
      MaaFramework 版本、轻量版必须不带；两个都要能通过隐藏命令 `selfcheck` 真正加载运行库），
@@ -45,8 +45,9 @@ git tag -a v0.1.2 -m "MaaCtl v0.1.2" && git push origin v0.1.2
 git tag -a v0.1.2-beta.1 -m "MaaCtl v0.1.2-beta.1" && git push origin v0.1.2-beta.1
 ```
 
-`maafw.version` 钉住所有平台共用的 MaaFramework 版本；升级时改这一个文件，六个平台的
-`fetch_maafw.py` 就会去取对应的 vX.Y.Z 资源。
+MaaFramework 的版本只钉在 `release.yml` 的 `MAAFW_VERSION` 环境变量里（六个平台共用）：升级时
+只改这一行，工作流会把它传给 `fetch_maafw.py`；项目代码与打包器都不感知版本，运行库版本由
+`maactl selfcheck` 从加载后的库里读出（`build_release.py` 就是用它验证产物的）。
 
 ## 发布到 npm
 

@@ -1,19 +1,19 @@
 // Command packmaafw builds the MaaFramework payload that bundled maactl builds
 // carry inside the executable.
 //
-// It packs the MaaFramework runtime that a release archive unpacks into
+// It packs the runtime that a MaaFramework release archive unpacks into
 // maafw/bin and writes it to internal/maafw/bundled/payload, where the next
 // `go build -tags bundled ./cmd/maactl` embeds it.
 //
-// The tool never downloads anything: unpack the MAA-<platform>-<version>.zip
-// archive of the platform you are building for into maafw/ first (CI does this
-// per platform). Packing fails when the directory holds no runtime, or when its
-// libraries belong to another platform, so a mis-configured build cannot
-// silently produce an executable that cannot load MaaFramework.
+// The tool is deliberately unaware of MaaFramework versions and platforms: it
+// downloads nothing, asserts nothing, and packs whatever files it finds in the
+// directory. Filling that directory with the runtime of the platform being
+// built for is the job of CI (.github/scripts/fetch_maafw.py verifies the
+// archive it unpacks); maactl itself reads the version from the loaded runtime
+// at run time, so bumping MaaFramework never touches this code.
 //
-//	go run ./tools/packmaafw                      # maafw/bin, version pinned in maafw.version
-//	go run ./tools/packmaafw -dir /tmp/maa/bin    # runtime unpacked elsewhere
-//	go run ./tools/packmaafw -platform win-x86_64 -version v5.13.1   # assert both (CI does this)
+//	go run ./tools/packmaafw                      # packs maafw/bin
+//	go run ./tools/packmaafw -dir /tmp/maa/bin    # packs a runtime kept elsewhere
 package main
 
 import (
@@ -22,25 +22,21 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"maactl/internal/maafw/pack"
-	"maactl/internal/platform"
 )
 
 const (
 	defaultOut    = "internal/maafw/bundled/payload"
-	versionFile   = "maafw.version"
 	containerName = "bin.zip"
-	versionName   = "version.txt"
-	platformName  = "platform.txt"
+	// keepName is the hand-written README that keeps the directory embeddable
+	// for unbundled builds; every other file there is generated.
+	keepName = "README.md"
 )
 
 type options struct {
-	dir      string
-	out      string
-	platform string
-	version  string
+	dir string
+	out string
 }
 
 func main() {
@@ -52,97 +48,28 @@ func main() {
 }
 
 func run(opts options) error {
-	target, err := expectedTarget(opts.platform)
+	container, files, err := pack.Container(opts.dir)
 	if err != nil {
 		return err
 	}
-	if err := checkRuntime(opts.dir, target); err != nil {
+	if err := writePayload(opts.out, container); err != nil {
 		return err
 	}
-	version, err := resolveVersion(opts.version)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("packing MaaFramework %s for %s from %s\n", version, target.ID(), opts.dir)
-
-	container, files, err := pack.Container(opts.dir, target)
-	if err != nil {
-		return err
-	}
-	if err := writePayload(opts.out, container, version, target); err != nil {
-		return err
-	}
-	fmt.Printf("  payload: %s (%d files, %s)\n", filepath.Join(opts.out, containerName), files, humanBytes(int64(len(container))))
-	fmt.Printf("  version: %s\n", filepath.Join(opts.out, versionName))
-	fmt.Printf("  platform: %s\n", filepath.Join(opts.out, platformName))
-	fmt.Printf("build a self-contained executable with: go build -tags bundled -o %s ./cmd/maactl\n", target.Executable("maactl"))
+	payload := filepath.Join(opts.out, containerName)
+	fmt.Printf("packed %d files from %s\n", files, opts.dir)
+	fmt.Printf("  payload: %s (%s)\n", payload, humanBytes(int64(len(container))))
+	fmt.Printf("  MaaFramework version: read from the runtime at run time\n")
+	fmt.Printf("build a self-contained executable with: go build -tags bundled -o %s ./cmd/maactl\n",
+		executable("maactl"))
 	return nil
 }
 
-// expectedTarget resolves the platform being built. The payload is embedded in a
-// native build of maactl, so it can only ever be the platform this tool runs on;
-// -platform therefore asserts that the runner really is the one the build
-// matrix expected.
-func expectedTarget(value string) (platform.Target, error) {
-	host := platform.Host()
-	if !host.Known() {
-		return platform.Target{}, fmt.Errorf("maactl is not built for %s/%s; supported platforms: %s", runtime.GOOS, runtime.GOARCH, platform.IDs())
-	}
-	if strings.TrimSpace(value) == "" {
-		return host, nil
-	}
-	requested, err := platform.Parse(value)
-	if err != nil {
-		return platform.Target{}, err
-	}
-	if requested != host {
-		return platform.Target{}, fmt.Errorf("-platform %s does not match this tool's platform %s; pack and build for %s on a %s machine", requested.ID(), host.ID(), requested.ID(), requested.Title())
-	}
-	return requested, nil
-}
-
-// checkRuntime verifies that dir holds the runtime of target, so the payload
-// never mixes a platform's libraries with another platform's build.
-func checkRuntime(dir string, target platform.Target) error {
-	detected, err := pack.Inspect(dir)
-	if err != nil {
-		return fmt.Errorf("%v; for %s, %s must hold %s, so unpack the MAA-%s release archive there",
-			err, target.ID(), dir, strings.Join(target.Libraries(), " and "), target.ID())
-	}
-	if detected.OS != target.OS || (detected.Arch != "" && detected.Arch != target.Arch) {
-		return fmt.Errorf("%s holds %s libraries but %s was requested; unpack the MAA-%s release archive there instead",
-			dir, detected.ID(), target.ID(), target.ID())
-	}
-	if detected.Arch == "" {
-		fmt.Fprintf(os.Stderr, "warning: cannot read the architecture of %s; assuming %s\n", filepath.Join(dir, target.FrameworkLibrary()), target.Arch)
-	}
-	return nil
-}
-
-// resolveVersion reads the MaaFramework version from -version or from the
-// pinned maafw.version file.
-func resolveVersion(value string) (string, error) {
-	version := strings.TrimSpace(value)
-	if version == "" {
-		pinned, err := os.ReadFile(versionFile)
-		if err != nil {
-			return "", fmt.Errorf("no -version and cannot read %s: %w", versionFile, err)
-		}
-		version = strings.TrimSpace(string(pinned))
-	}
-	if version == "" {
-		return "", fmt.Errorf("%s is empty; write the MaaFramework release tag into it, e.g. v5.13.1", versionFile)
-	}
-	// Accept both "5.13.1" and the tagged form "v5.13.1".
-	if !strings.HasPrefix(version, "v") {
-		version = "v" + version
-	}
-	return version, nil
-}
-
-// writePayload replaces the generated payload files, keeping the hand-written
-// README that makes the directory embeddable for unbundled builds.
-func writePayload(dir string, container []byte, version string, target platform.Target) error {
+// writePayload replaces the generated payload with container, keeping the
+// hand-written README that makes the directory embeddable for unbundled builds.
+// Generated files removed in favour of the container include the version.txt and
+// platform.txt older packers wrote: the payload is a plain archive of the
+// runtime, and nothing else.
+func writePayload(dir string, container []byte) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -151,36 +78,29 @@ func writePayload(dir string, container []byte, version string, target platform.
 		return err
 	}
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".zip") {
+		if entry.Name() == keepName {
 			continue
 		}
-		if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil {
+		if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
 			return err
 		}
 	}
-	files := []struct {
-		name    string
-		content []byte
-	}{
-		{containerName, container},
-		{versionName, []byte(version + "\n")},
-		{platformName, []byte(target.ID() + "\n")},
+	return os.WriteFile(filepath.Join(dir, containerName), container, 0o644)
+}
+
+// executable appends the host platform's executable suffix.
+func executable(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
 	}
-	for _, file := range files {
-		if err := os.WriteFile(filepath.Join(dir, file.name), file.content, 0o644); err != nil {
-			return err
-		}
-	}
-	return nil
+	return name
 }
 
 func parseFlags() options {
 	var opts options
 	flags := flag.NewFlagSet("packmaafw", flag.ExitOnError)
 	flags.StringVar(&opts.dir, "dir", pack.Dir, "MaaFramework runtime directory, as unpacked from a release archive")
-	flags.StringVar(&opts.out, "out", defaultOut, "directory receiving "+containerName+", "+versionName+", and "+platformName)
-	flags.StringVar(&opts.platform, "platform", "", "assert the platform being packed, e.g. win-x86_64 (default: the platform this tool runs on)")
-	flags.StringVar(&opts.version, "version", "", "MaaFramework release tag, e.g. v5.13.1 (default: read from "+versionFile+")")
+	flags.StringVar(&opts.out, "out", defaultOut, "directory receiving "+containerName)
 	flags.Parse(os.Args[1:])
 	return opts
 }

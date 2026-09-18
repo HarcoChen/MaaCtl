@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Download and unpack a MaaFramework release into the maafw/ directory.
 
-The packer (tools/packmaafw) never touches the network: it packs whatever
-runtime is unpacked below maafw/bin. CI therefore downloads the release of the
-platform it is building for here, before packing.
+This is the only place a MaaFramework release is chosen and fetched; the rest of
+the project treats the unpacked directory as an opaque runtime. The packer
+(tools/packmaafw) never touches the network, and nothing in the Go code knows
+about MaaFramework versions: maactl asks the loaded libraries at run time.
 
 Usage:
-    python fetch_maafw.py --platform win-x86_64
-    python fetch_maafw.py --platform linux-aarch64 --version v5.13.1 --dest maafw
+    python fetch_maafw.py --platform win-x86_64                  # current stable release
+    python fetch_maafw.py --platform linux-aarch64 --version v5.13.1
+    python fetch_maafw.py --platform linux-x86_64 --dest maafw
 """
 
 from __future__ import annotations
@@ -26,12 +28,13 @@ from pathlib import Path
 
 DEFAULT_REPO = "MaaXYZ/MaaFramework"
 DEFAULT_DEST = "maafw"
-DEFAULT_VERSION_FILE = "maafw.version"
 USER_AGENT = "maactl-ci"
 ATTEMPTS = 3
 
 # One entry per platform maactl is built for: the id in the release asset name,
-# and the libraries the unpacked bin/ directory must contain.
+# and the libraries the unpacked bin/ directory must contain. This check is what
+# keeps a runtime of the wrong platform out of a build, now that neither the
+# packer nor the executable carries platform metadata of its own.
 PLATFORMS = {
     "win-x86_64": ("MaaFramework.dll", "MaaToolkit.dll"),
     "win-aarch64": ("MaaFramework.dll", "MaaToolkit.dll"),
@@ -83,19 +86,46 @@ def fetch(url: str, accept: str = "application/octet-stream", authenticated: boo
     raise SystemExit(f"error: download {url} failed: {last}")
 
 
-def asset_name(platform: str, version: str) -> str:
-    return f"MAA-{platform}-{version}.zip"
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Report redirects as errors so their Location header can be read."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
-def resolve_version(explicit: str, version_file: Path) -> str:
+def latest_version(repo: str) -> str:
+    """Return the tag of the current stable release.
+
+    GitHub redirects /releases/latest to /releases/tag/<tag>. Reading that
+    redirect needs no token and consumes no API quota, unlike the releases API.
+    """
+    url = f"https://github.com/{repo}/releases/latest"
+    opener = urllib.request.build_opener(NoRedirect)
+    try:
+        opener.open(urllib.request.Request(url, headers={"User-Agent": USER_AGENT}), timeout=120)
+    except urllib.error.HTTPError as error:
+        if error.code not in (301, 302, 303, 307, 308):
+            raise SystemExit(f"error: cannot resolve the latest release of {repo}: HTTP {error.code}")
+        location = error.headers.get("Location", "")
+        tag = location.rstrip("/").rsplit("/", 1)[-1]
+        if tag.startswith("v") and tag[1:2].isdigit():
+            return tag
+        raise SystemExit(f"error: unexpected redirect from {url}: {location!r}")
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        raise SystemExit(f"error: cannot resolve the latest release of {repo}: {error}")
+    raise SystemExit(f"error: {url} did not redirect; pass --version to pick a release")
+
+
+def release_version(explicit: str, repo: str) -> str:
+    """Return the release tag to download: the requested one, or the current stable one."""
     version = explicit.strip()
     if not version:
-        if not version_file.exists():
-            raise SystemExit(f"error: no --version and {version_file} does not exist")
-        version = version_file.read_text(encoding="utf-8").strip()
-    if not version:
-        raise SystemExit(f"error: {version_file} is empty; write the MaaFramework release tag into it, e.g. v5.13.1")
+        return latest_version(repo)
     return version if version.startswith("v") else f"v{version}"
+
+
+def asset_name(platform: str, version: str) -> str:
+    return f"MAA-{platform}-{version}.zip"
 
 
 def download_archive(repo: str, platform: str, version: str, name: str) -> tuple[bytes, str]:
@@ -131,9 +161,9 @@ def download_archive(repo: str, platform: str, version: str, name: str) -> tuple
 def extract(archive: bytes, dest: Path) -> int:
     """Unpack the archive into dest, which is replaced as a whole.
 
-    Replacing the directory is deliberate: the packer refuses a maafw/ that mixes
-    runtimes of several platforms, and a stale download should never be the
-    reason a build fails.
+    Replacing the directory is deliberate: a stale download should never be the
+    reason a build fails, and mixing two platforms' runtimes in one directory
+    would be undetectable for the packer.
     """
     if dest.exists():
         shutil.rmtree(dest)
@@ -172,6 +202,12 @@ def safe_target(root: Path, name: str) -> Path | None:
 
 
 def verify(dest: Path, platform: str) -> None:
+    """Fail unless the unpacked runtime belongs to the requested platform.
+
+    maactl reads the version from the runtime itself, and the packer packs
+    whatever it finds, so this is the only place that can tell a wrong-platform
+    download from a right one.
+    """
     libraries = PLATFORMS[platform]
     missing = [library for library in libraries if not (dest / "bin" / library).is_file()]
     if missing:
@@ -181,13 +217,12 @@ def verify(dest: Path, platform: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--platform", required=True, choices=sorted(PLATFORMS), help="MaaFramework platform id, e.g. win-x86_64")
-    parser.add_argument("--version", default="", help=f"MaaFramework tag, e.g. v5.13.1 (default: read from {DEFAULT_VERSION_FILE})")
+    parser.add_argument("--version", default="", help="MaaFramework tag, e.g. v5.13.1 (default: the current stable release)")
     parser.add_argument("--dest", default=DEFAULT_DEST, help=f"directory receiving the release (default: {DEFAULT_DEST})")
     parser.add_argument("--repo", default=DEFAULT_REPO, help=f"repository publishing the release (default: {DEFAULT_REPO})")
-    parser.add_argument("--version-file", default=DEFAULT_VERSION_FILE, help=f"file pinning the version (default: {DEFAULT_VERSION_FILE})")
     args = parser.parse_args()
 
-    version = resolve_version(args.version, Path(args.version_file))
+    version = release_version(args.version, args.repo)
     dest = Path(args.dest)
     name = asset_name(args.platform, version)
     print(f"downloading MaaFramework {version} for {args.platform}: {name}")

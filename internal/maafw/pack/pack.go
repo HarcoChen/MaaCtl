@@ -1,10 +1,14 @@
-// Package pack turns a MaaFramework runtime directory into the compact payload
-// embedded by bundled maactl builds.
+// Package pack turns a MaaFramework runtime directory into the payload embedded
+// by bundled maactl builds.
 //
 // The runtime directory is what a MaaFramework release archive unpacks into
 // maafw/bin: the shared libraries maactl loads at run time, plus the control
-// units and plugins they need. Everything else in the archive (docs, samples,
-// headers, symbols) is never part of a payload.
+// units and plugins they need. The packer packs exactly the files it finds
+// there and cares about nothing else—not the version, not the platform, not
+// which MaaFramework release the files came from. Producing a correct runtime
+// directory is the job of whoever fills maafw/ (CI downloads the release of the
+// platform it builds for), and the runtime itself is the authority on which
+// version it is.
 package pack
 
 import (
@@ -17,8 +21,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-
-	"maactl/internal/platform"
 )
 
 // Dir is where a MaaFramework release archive is unpacked, relative to the
@@ -26,49 +28,11 @@ import (
 // this directory before packing, so the packer itself never downloads anything.
 var Dir = filepath.Join("maafw", "bin")
 
-// Inspect identifies the platform of the MaaFramework runtime in dir from the
-// library file names, and reads the architecture out of the framework library.
-// The returned Target has an empty Arch when the library header is not a
-// recognizable executable format, which only matters for hand-made runtimes.
-func Inspect(dir string) (platform.Target, error) {
-	var systems []platform.OS
-	for _, target := range platform.Supported {
-		if !hasLibraries(dir, target) {
-			continue
-		}
-		if !slices.Contains(systems, target.OS) {
-			systems = append(systems, target.OS)
-		}
-	}
-	switch len(systems) {
-	case 1:
-	case 0:
-		return platform.Target{}, fmt.Errorf("%s holds no MaaFramework libraries", dir)
-	default:
-		names := make([]string, len(systems))
-		for i, system := range systems {
-			names[i] = string(system)
-		}
-		return platform.Target{}, fmt.Errorf("%s mixes runtimes of several platforms (%s)", dir, strings.Join(names, ", "))
-	}
-	target := platform.Target{OS: systems[0]}
-	arches, err := platform.Architectures(filepath.Join(dir, target.FrameworkLibrary()))
-	if err == nil && len(arches) > 0 {
-		target.Arch = arches[0]
-	}
-	return target, nil
-}
-
-// Container packs the MaaFramework runtime in dir into a zip stream that
-// bundled builds embed and extract at run time, reporting how many files it
-// packed. The libraries of target must all be present, so a directory that
-// belongs to another platform fails instead of producing an unusable payload.
-func Container(dir string, target platform.Target) ([]byte, int, error) {
+// Container packs every file of dir into a zip stream that bundled builds embed
+// and extract at run time, reporting how many files it packed.
+func Container(dir string) ([]byte, int, error) {
 	files, err := runtimeFiles(dir)
 	if err != nil {
-		return nil, 0, err
-	}
-	if err := requireLibraries(dir, target); err != nil {
 		return nil, 0, err
 	}
 	var out bytes.Buffer
@@ -119,37 +83,10 @@ func runtimeFiles(dir string) ([]string, error) {
 		return nil, err
 	}
 	if len(files) == 0 {
-		return nil, fmt.Errorf("%s holds no files", dir)
+		return nil, fmt.Errorf("%s holds no files; unpack a MaaFramework release archive there first", dir)
 	}
 	slices.Sort(files)
 	return files, nil
-}
-
-// hasLibraries reports whether every library of target is present in dir.
-func hasLibraries(dir string, target platform.Target) bool {
-	return len(missingLibraries(dir, target)) == 0
-}
-
-// missingLibraries names the libraries of target that dir does not hold, in
-// target order, so a half-extracted archive is obvious.
-func missingLibraries(dir string, target platform.Target) []string {
-	var missing []string
-	for _, library := range target.Libraries() {
-		if info, err := os.Stat(filepath.Join(dir, library)); err != nil || info.IsDir() {
-			missing = append(missing, library)
-		}
-	}
-	return missing
-}
-
-// requireLibraries fails unless dir holds every library of target.
-func requireLibraries(dir string, target platform.Target) error {
-	missing := missingLibraries(dir, target)
-	if len(missing) > 0 {
-		return fmt.Errorf("%s is missing %s for %s; unpack the MAA-%s release archive into %s",
-			dir, strings.Join(missing, ", "), target.ID(), target.ID(), filepath.Dir(dir))
-	}
-	return nil
 }
 
 // writeEntry copies one runtime file into the container under its relative

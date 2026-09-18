@@ -18,8 +18,7 @@ internal/
     bundled/           内嵌 payload 的编译期承载与运行期解包
   output/              文本与 JSON 输出辅助
   table/               终端宽度对齐的表格渲染
-tools/packmaafw/       打包工具：只读 maafw/bin，生成 payload（不联网）
-maafw.version          本项目使用的 MaaFramework 版本
+tools/packmaafw/       打包工具：只读 maafw/bin，原样打成 payload（不联网、不识版本与平台）
 npm/                   npm 分发包：npx maactl / npm i -g maactl 的参数转发器
 .github/scripts/       CI 脚本：fetch_maafw.py（下载并解包 release）、
                        build_release.py（构建 + 验签 + 打包一个平台）、release.py（tag 与更新日志）
@@ -51,7 +50,7 @@ maafw/                 本地 MaaFramework 运行库（不入库，CI 在每个�
 
 | 位置 | 内容 |
 | --- | --- |
-| `internal/platform` | 平台 id、运行库文件名（dll/so/dylib）、`.exe` 后缀、从 PE/ELF/Mach-O 头读架构 |
+| `internal/platform` | 平台 id、运行库文件名（dll/so/dylib）、从 GOOS/GOARCH 得到的主机平台 |
 | `internal/pi/lookup.go` | `RunnableControllerTypes()`：各平台能创建的控制器类型（Windows `Win32`/`Gamepad`，macOS `MacOS`/`PlayCover`，Linux `Linux`，全平台 `Adb`） |
 | `internal/cli/controller.go` | 各控制器类型的构造与参数解析；不支持的组合在调用 MaaFramework 之前就报错 |
 

@@ -59,6 +59,11 @@ jobs:
     env:
       CGO_ENABLED: "0"
       VERSION: ${{ needs.version.outputs.version }}
+      # The one and only place a MaaFramework release is pinned. Everything else
+      # is version-agnostic: the packer packs whatever lands in maafw/bin, and
+      # maactl reads the version from the loaded runtime (see `selfcheck`), so
+      # bumping this line is the whole upgrade.
+      MAAFW_VERSION: v5.13.1
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -82,9 +87,10 @@ jobs:
       - name: Download the MaaFramework release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python .github/scripts/fetch_maafw.py --platform ${{ matrix.platform }}
+        run: python .github/scripts/fetch_maafw.py --platform ${{ matrix.platform }} --version "${{ env.MAAFW_VERSION }}"
       - name: Pack the MaaFramework payload
-        run: go run ./tools/packmaafw -platform ${{ matrix.platform }}
+        # No platform or version arguments: the packer copies maafw/bin as it is.
+        run: go run ./tools/packmaafw
       - name: Test
         run: |
           go test ./...

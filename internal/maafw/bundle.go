@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 
 	"maactl/internal/maafw/bundled"
-	"maactl/internal/platform"
 )
 
 // bundledLibDir extracts the MaaFramework libraries embedded in this build into
@@ -34,9 +33,6 @@ func bundledTargetDir() (string, error) {
 	case !bundled.Compiled():
 		return "", errNoBundle
 	case !bundled.Available():
-		if target := bundled.Target(); target != "" && target != platform.Host().ID() {
-			return "", fmt.Errorf("this build carries MaaFramework libraries for %s but was built for %s; build it on the target platform", target, platform.Host().ID())
-		}
 		return "", fmt.Errorf("this build was compiled with -tags bundled but carries no MaaFramework payload; run \"go run ./tools/packmaafw\" before building")
 	}
 	root, err := os.UserCacheDir()

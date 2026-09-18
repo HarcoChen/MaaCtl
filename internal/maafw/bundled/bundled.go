@@ -4,6 +4,8 @@
 // The payload directory is filled by tools/packmaafw at build time and read
 // back here at run time: the container archive is unpacked into a cache
 // directory, which is then handed to MaaFramework as its library directory.
+// The payload is a plain copy of a MaaFramework runtime directory—maactl keeps
+// no MaaFramework version of its own, it asks the loaded libraries.
 //
 // Embedding is opt-in through the "bundled" build tag, so the same source tree
 // produces both a self-contained executable and a small one that loads
@@ -47,8 +49,6 @@ var current = sync.OnceValue(load)
 
 type payload struct {
 	container []byte
-	version   string
-	target    string // platform id the libraries were built for, e.g. win-x86_64
 }
 
 // Compiled reports whether this build was compiled to carry MaaFramework.
@@ -57,60 +57,27 @@ func Compiled() bool {
 	return compiled
 }
 
-// Available reports whether this build carries MaaFramework libraries for the
-// platform it was built for.
+// Available reports whether this build carries MaaFramework libraries.
 func Available() bool {
-	have := current()
-	if len(have.container) == 0 {
-		return false
-	}
-	return compatible(have)
-}
-
-// compatible reports whether a payload may be used by this build. A payload
-// with no recorded platform is accepted, because only the packer writes that
-// marker and an older payload simply does not have one.
-func compatible(have payload) bool {
-	if have.target == "" {
-		return true
-	}
-	return have.target == platform.Host().ID()
-}
-
-// Version returns the MaaFramework version of the embedded libraries, or ""
-// when the build is unbundled or the version is unknown.
-func Version() string {
-	return current().version
-}
-
-// Target returns the platform id of the embedded libraries, or "" when it is
-// unknown.
-func Target() string {
-	return current().target
+	return len(current().container) > 0
 }
 
 // CacheID identifies the embedded payload so that libraries extracted from a
-// different payload—or from a build for another platform—are never reused.
+// different payload are never reused. It is derived from the payload bytes, so
+// it changes exactly when the packed runtime does—no version has to be tracked
+// for that.
 func CacheID() string {
 	return cacheID(current())
 }
 
-// cacheID derives the cache directory name of one payload.
+// cacheID derives the cache directory name of one payload: the host platform
+// for readability, plus a digest of the payload that keeps two runtimes apart.
 func cacheID(have payload) string {
 	if len(have.container) == 0 {
 		return ""
 	}
-	parts := make([]string, 0, 2)
-	if target := sanitize(have.target); target != "" {
-		parts = append(parts, target)
-	}
-	if version := sanitize(have.version); version != "" {
-		parts = append(parts, version)
-	} else {
-		sum := sha256.Sum256(have.container)
-		parts = append(parts, hex.EncodeToString(sum[:8]))
-	}
-	return strings.Join(parts, "-")
+	sum := sha256.Sum256(have.container)
+	return platform.Host().ID() + "-" + hex.EncodeToString(sum[:8])
 }
 
 // Extract writes the embedded libraries into target and reports how many files
@@ -119,9 +86,6 @@ func Extract(target string) (int, error) {
 	have := current()
 	if len(have.container) == 0 {
 		return 0, fmt.Errorf("this maactl build does not carry MaaFramework libraries")
-	}
-	if !compatible(have) {
-		return 0, fmt.Errorf("this build carries MaaFramework libraries for %s but was built for %s", have.target, platform.Host().ID())
 	}
 	return ExtractZip(have.container, target)
 }
@@ -162,8 +126,9 @@ func ExtractZip(container []byte, target string) (int, error) {
 	return written, nil
 }
 
-// readPayload collects the container, version, and platform from an embedded
-// payload tree.
+// readPayload collects the container from an embedded payload tree. Anything
+// but the container archive is ignored: the payload carries no metadata, so
+// there is no version or platform file to read or to keep in sync.
 func readPayload(fsys fs.FS) payload {
 	entries, err := fs.ReadDir(fsys, payloadDir)
 	if err != nil {
@@ -171,20 +136,12 @@ func readPayload(fsys fs.FS) payload {
 	}
 	var result payload
 	for _, entry := range entries {
-		name := path.Join(payloadDir, entry.Name())
-		switch {
-		case strings.HasSuffix(entry.Name(), ".zip"):
-			if data, err := fs.ReadFile(fsys, name); err == nil {
-				result.container = data
-			}
-		case entry.Name() == "version.txt":
-			if data, err := fs.ReadFile(fsys, name); err == nil {
-				result.version = strings.TrimSpace(string(data))
-			}
-		case entry.Name() == "platform.txt":
-			if data, err := fs.ReadFile(fsys, name); err == nil {
-				result.target = strings.TrimSpace(string(data))
-			}
+		if !strings.HasSuffix(entry.Name(), ".zip") {
+			continue
+		}
+		if data, err := fs.ReadFile(fsys, path.Join(payloadDir, entry.Name())); err == nil {
+			result.container = data
+			break
 		}
 	}
 	return result
@@ -246,21 +203,8 @@ func hasEntry(reader *zip.Reader, name string) bool {
 	return false
 }
 
+// fileExists reports whether name is an existing regular file.
 func fileExists(name string) bool {
 	info, err := os.Stat(name)
 	return err == nil && !info.IsDir()
-}
-
-// sanitize keeps only characters that are safe in a directory name.
-func sanitize(value string) string {
-	var b strings.Builder
-	for _, r := range value {
-		switch {
-		case r >= '0' && r <= '9', r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
-			b.WriteRune(r)
-		case r == '.', r == '-', r == '_':
-			b.WriteRune(r)
-		}
-	}
-	return strings.Trim(b.String(), ".-")
 }

@@ -63,32 +63,43 @@ def build(platform: str, version: str, directory: Path) -> list[Path]:
     return targets
 
 
+def framework_version(selfcheck: str) -> str:
+    """Return the version reported by `selfcheck`, e.g. "5.13.1", or "" if absent.
+
+    The line looks like `MaaFramework v5.13.1 (win-x86_64, bundled) from <dir>`,
+    and the version in it comes from the loaded libraries themselves.
+    """
+    _, _, rest = selfcheck.partition("MaaFramework v")
+    version = rest.split(" ", 1)[0].strip()
+    return version if version[:1].isdigit() else ""
+
+
 def verify(executables: list[Path], version: str) -> None:
     """Check that both executables run, report the version, and load MaaFramework.
 
-    `--version` proves what a build carries—a build with -tags bundled but
-    without a payload would otherwise silently ship an executable that cannot
-    load MaaFramework. `selfcheck` then loads the runtime for real: the
-    self-contained executable from its embedded payload, the lite one from
-    ./maafw/bin, which is where the release download was unpacked.
+    `--version` proves which maactl build this is. `selfcheck` then loads the
+    runtime for real and prints what those libraries report about themselves:
+    the self-contained executable must use its embedded payload ("bundled"),
+    the lite one the runtime unpacked next to it ("local"). There is no
+    build-time version stamp to compare against—the runtime is the authority—so
+    loading it is what proves a usable payload is inside the executable.
     """
     for path in executables:
         banner = run([str(path), "--version"])
         if version not in banner:
             raise SystemExit(f"error: {path} reports {banner!r}, expected version {version}")
-        expected = "bundled" if path.stem == "maactl" else "local"
-        if path.stem == "maactl":
-            if "MaaFramework v" not in banner:
-                raise SystemExit(f"error: {path} does not carry MaaFramework: {banner!r}")
-        elif "MaaFramework v" in banner:
-            raise SystemExit(f"error: {path} unexpectedly carries MaaFramework: {banner!r}")
 
+        expected = "bundled" if path.stem == "maactl" else "local"
         runtime = run([str(path), "selfcheck"])
         if expected not in runtime:
             raise SystemExit(
                 f"error: {path} reports {runtime!r}, expected the {expected} MaaFramework runtime; "
                 "run '.github/scripts/fetch_maafw.py --platform <platform>' and 'go run ./tools/packmaafw' first"
             )
+        reported = framework_version(runtime)
+        if not reported:
+            raise SystemExit(f"error: {path} did not report a MaaFramework version: {runtime!r}")
+        print(f"  {path.stem}: MaaFramework {reported} ({expected})")
 
 
 def pack(executables: list[Path], platform: str, version: str, directory: Path) -> Path:
