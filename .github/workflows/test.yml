@@ -1,0 +1,58 @@
+name: Test
+
+# Go tests only ran on a version tag (release.yml), so a pull request or a branch
+# push could merge a regression without any test running. This workflow runs the
+# build gates on every pull request and on main.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # The repository is checked out with core.autocrlf=true on Windows, which
+      # rewrites the LF index into CRLF working files. gofmt only accepts LF, so
+      # without this a Windows checkout reports every CRLF source file as
+      # unformatted. Turning autocrlf off before checkout keeps the working tree
+      # byte-identical to the index, so `gofmt -l` only flags real problems.
+      - name: Disable CRLF conversion
+        run: git config --global core.autocrlf false
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt found unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: Vet
+        run: go vet ./...
+      # The bundled build needs a packed payload that is not in the repository,
+      # so only the plain build is tested here; the release workflow runs
+      # `go test -tags bundled ./...` after packing it.
+      - name: Test
+        run: go test ./...

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -13,6 +14,11 @@ import (
 type stopError struct{ message string }
 
 func (e *stopError) Error() string { return e.message }
+
+// errTaskCancelled reports a run that a signal cancelled. It is a sentinel so
+// callers can map it onto the documented interrupt exit code without matching on
+// the message.
+var errTaskCancelled = errors.New("task cancelled")
 
 // waitExecution keeps listening for cancellation even for unbounded tasks.
 // Each native Wait runs once. Stop completion and original task completion
@@ -61,7 +67,7 @@ func waitExecution(waitTask func() maa.Status, waitStop func() maa.Status, signa
 		return &stopError{fmt.Sprintf("%s; stop job failed: %s", cause, stopStatus)}
 	}
 	if cancelled {
-		return fmt.Errorf("task cancelled")
+		return errTaskCancelled
 	}
 	return nil
 }

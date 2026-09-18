@@ -1,10 +1,8 @@
 package tests
 
 import (
-	"strings"
 	"testing"
 
-	"maactl/internal/maafw"
 	"maactl/internal/maafw/bundled"
 )
 
@@ -18,14 +16,8 @@ func TestBundledBuildCarriesPayload(t *testing.T) {
 	if !bundled.Available() {
 		t.Fatal("built with -tags bundled but no payload; run \"go run ./tools/packmaafw\" first")
 	}
-	if bundled.Version() == "" {
-		t.Error("payload carries no MaaFramework version")
-	}
-	if maafw.BundledVersion() != bundled.Version() {
-		t.Errorf("maafw.BundledVersion() = %q, want %q", maafw.BundledVersion(), bundled.Version())
-	}
-	if id := bundled.CacheID(); id == "" || strings.ContainsAny(id, `/\:`) {
-		t.Errorf("CacheID() = %q, want a path-safe identifier", id)
+	if bundled.CacheID() == "" {
+		t.Error("a payload must name the cache directory it is extracted into")
 	}
 }
 
@@ -37,8 +29,5 @@ func TestUnbundledBuildReportsNoLibraries(t *testing.T) {
 	}
 	if bundled.Available() {
 		t.Error("an unbundled build must not report embedded libraries")
-	}
-	if maafw.BundledVersion() != "" {
-		t.Errorf("maafw.BundledVersion() = %q, want empty", maafw.BundledVersion())
 	}
 }

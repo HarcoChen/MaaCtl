@@ -86,10 +86,18 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          gh release download "$env:TAG" --pattern maactl.exe --dir dist --clobber
-          if (-not (Test-Path dist/maactl.exe)) {
-            throw "release $env:TAG has no maactl.exe asset; run the Release workflow first"
+          # Every platform ships one archive holding both executables; the npm
+          # wrapper is Windows-only, so it always takes the win-x86_64 one.
+          gh release download "$env:TAG" --pattern "maactl-*-win-x86_64.zip" --dir dist --clobber
+          $archive = Get-ChildItem dist -Filter *.zip | Select-Object -First 1
+          if (-not $archive) {
+            throw "release $env:TAG has no maactl-*-win-x86_64.zip asset; run the Release workflow first"
           }
+          Expand-Archive -LiteralPath $archive.FullName -DestinationPath dist -Force
+          if (-not (Test-Path dist/maactl.exe)) {
+            throw "$($archive.Name) carries no maactl.exe"
+          }
+          Write-Host "extracted dist/maactl.exe from $($archive.Name)"
 
       - name: Stamp the package version from the tag
         working-directory: npm

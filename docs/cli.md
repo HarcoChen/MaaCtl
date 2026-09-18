@@ -1,339 +1,394 @@
 # 命令行参考
 
-本文是 `maactl` 的完整命令说明。安装方式见 [README](../README.md)。
+本文是 `maactl` 的完整命令说明，对应第二版命令行设计
+（[pi-cli-design.md](pi-cli-design.md)）。安装方式见 [README](../README.md)。
 
 ## 通用约定
 
-- 所有选项都以 `-` 或 `--` 开头；只有命令名和 task/node 名称使用位置参数。
-- PI 默认从**当前工作目录**读取 `./interface.json`（不是从 exe 所在目录）。`-f/--interface`
-  可指定 `interface.json` 文件，或包含它的项目目录。
-- MaaFramework 运行库的查找顺序见 [build.md](build.md#运行库查找顺序)；`-l/--lib-dir` 始终可覆盖。
-- 帮助语言跟随系统（Windows 取用户默认 UI 语言，其他系统读取 `LC_ALL`/`LC_MESSAGES`/`LANG`），
-  中文环境显示中文，其余显示英文；可用 `MAACTL_LANG=zh_CN` 或 `MAACTL_LANG=en` 强制覆盖。
+- **每个命令与每个选项都有短形式**：命令用 1–3 字母别名（`maactl pi t`），选项用单字母
+  shorthand（`-j`）或 2–3 字母助记别名（`-if`、`-opt`）。两者都在帮助里列出。
+  cobra 生成的 `completion` 子树及其 `--no-descriptions` 除外。
+- 只有命令名和必需的名称（task、node、preset）使用位置参数；其余一律是 `-`/`--` 选项。
+- PI 默认从**进程启动目录**读取 `./interface.json`。`-f`/`-if`/`--interface` 可指定文件，
+  或包含 `interface.json` 的项目目录。相对路径都以该文件所在目录解析。
+- 帮助语言跟随系统（`MAACTL_LANG=zh_CN|en` 可覆盖）；PI 里的 `$label` 由 `-lg/--lang` 解析，
+  默认与帮助语言一致。
+- MaaFramework 运行库查找顺序见 [build.md](build.md#运行库查找顺序)；`-l/--lib-dir` 始终可覆盖。
 
 ```powershell
-# 在当前目录的 interface.json 上操作
-maactl interface --show
-
-# 指定 PI 项目目录
-maactl interface --show -f D:\01_Projects\github\MaaMio
-
-# 指定 PI 文件和 MaaFramework 运行库
-maactl interface --show `
-  -f D:\projects\demo\interface.json `
-  -l D:\tools\maafw\bin
+maactl pi info -if D:\01_Projects\github\MaaMio
+maactl pi t -c Android
+maactl run -t 签到 -if D:\01_Projects\github\MaaMio -sa 30s
+maactl device adb -j
 ```
 
-## 参数速查
+### 命令一览
 
-全局选项（所有命令可用）：
+| 命令 | 别名 | 作用 |
+| --- | --- | --- |
+| `pi` | `if`、`interface` | 读取 ProjectInterface 的声明（不需要设备） |
+| `resource` | `res` | 资源：声明的与已加载的 |
+| `device` | `dev` | 设备与窗口（MaaToolkit 发现） |
+| `run` | `r` | 执行 task / preset / 节点 |
+| `config` | `cfg` | 客户端配置（只读） |
+| `version` | `ver` | 版本 |
 
-| 参数 | 作用 |
+命令按「只读查询（`pi`、`resource`、`device`）→ 执行（`run`）→ 配置（`config`）」排列，
+并且**同一个对象的所有查询都在同一个分组里**：例如资源声明的 `resource list` 与已加载资源的
+`resource inspect/nodes/hash` 都在 `resource` 下。
+
+### 全局选项
+
+| 短形式 | 长形式 | 作用 |
+| --- | --- | --- |
+| `-f` / `-if` | `--interface <path>` | PI 文件或项目目录（默认：`./interface.json`） |
+| `-l` / `-lib` | `--lib-dir <dir>` | MaaFramework 运行库目录（默认：`./maafw/bin`，bundled 构建用内嵌运行库） |
+| `-j` | `--json` | 输出 JSON；运行时 sink 事件也变为 JSON 行 |
+| `-lg` | `--lang <code>` | 解析 PI `$label` 的语言，如 `zh_cn`、`en_us`（默认：跟随系统） |
+| `-cfg` | `--config <path>` | 客户端配置文件（默认自动发现，见下） |
+| `-nocfg` | `--no-config` | 不读取客户端配置文件 |
+| `-log` | `--log-dir <dir>` | MaaFramework 日志目录 |
+| `-vb` | `--verbose` | 输出选择来源与合并细节 |
+| `-h` | `--help` | 帮助 |
+| `-v` | `--version` | 版本（含加载到的 MaaFramework 版本；只在顶层是版本） |
+
+短形式不重复占用：`-r`/`-c` 始终是 resource/controller；`-t`/`-n` 是 `run` 的快捷形式
+（`-t` 在 `pi options` 下也表示 `--task`）；`-o` 只属于 `--override`，`-p` 只属于 `--preset`。
+
+### 退出码
+
+| 码 | 含义 |
 | --- | --- |
-| `-h, --help` | 显示帮助 |
-| `-f, --interface` | ProjectInterface 文件或项目目录（默认 `./interface.json`） |
-| `-j, --json` | 输出 JSON；运行时 sink 事件也输出 JSON |
-| `-l, --lib-dir` | MaaFramework DLL 目录（默认 `./maafw/bin`） |
-| `-v, --version` | 显示版本信息（仅顶层可用） |
+| `0` | 成功 |
+| `1` | 框架初始化等内部错误 |
+| `2` | 参数错误 / PI 校验失败 / 选择歧义 |
+| `3` | 资源加载或 hash 校验失败 |
+| `4` | 控制器发现或连接失败 |
+| `5` | pretask 失败 |
+| `6` | 任务执行失败 |
+| `7` | 超时（`-to/--timeout`） |
+| `8` | 被中断（Ctrl+C） |
 
-`interface` 的操作参数：`--show/-s`、`--controllers/-c`、`--resources/-r`、`--tasks/-t`、
-`--validate/-v`。
+### 客户端配置文件
 
-`run` 的执行选项（`run task` 与 `run node` 共用）：
+`maactl` 会读取生态通行的 `config/maa_pi_config.json`，用于记住控制器、资源、设备与配置项取值：
 
-| 参数 | 作用 |
+1. `-cfg/--config <path>`；
+2. `<PI 目录>/config/maa_pi_config.json`；
+3. `<当前目录>/config/maa_pi_config.json`。
+
+识别 `controller`、`resource`、`adb.*`、`win32.*`、`macos.*`、`playcover.*`、`linux.*`、`option`、`task[].name/option/enabled`；
+未知字段（如 MFAA 的 `__key`）忽略。文件存在但无法解析时会报错，而不是静默丢弃；
+用 `-nocfg/--no-config` 完全跳过，用 `config show` 查看生效值。
+
+## 查看项目：`pi`（`if`）
+
+`pi` 只读取 PI，不加载资源、不连接控制器，因此没有设备也能用。
+
+```text
+maactl pi info        / maactl pi i
+maactl pi validate    / maactl pi v      [-st/--strict]
+maactl pi controllers / maactl pi c      [-ty/--type <Adb|Win32|MacOS|PlayCover|Gamepad|Linux>]
+maactl pi tasks       / maactl pi t      [-c <controller>] [-r <resource>] [-gr/--group <name>] [-all/--all]
+maactl pi groups      / maactl pi g
+maactl pi options     / maactl pi o      [-c] [-r] [-t/--task <task>] [-all]
+maactl pi presets     / maactl pi p
+maactl pi settings    / maactl pi s
+```
+
+```powershell
+maactl pi info -if D:\01_Projects\github\MaaMio
+maactl pi t -if D:\01_Projects\github\MaaMio -c Android -all
+maactl pi o -if D:\projects\demo -t 常规作战 -c Windows -r Official
+maactl pi v -if D:\projects\demo -st
+```
+
+- `pi info` 输出名称、版本、协议版本、语言、各类数量，以及是否声明 agent / pretask / telemetry
+  （maactl 不实现遥测上报）。
+- `pi validate` 检查可解析性、名称唯一性、引用完整性与磁盘文件；`-st` 把提示性问题
+  （当前平台无法创建的控制器、缺失的资源路径或语言文件）也视为失败。`-j` 返回
+  `{"issues":[{"level","path","message"}],"strict":false}`。
+- `pi tasks`/`pi options` 默认隐藏与所选 controller/resource 不匹配的项，`-all` 会列出并说明原因。
+- `pi options` 按 `global_option → resource.option → controller.option → task.option` 顺序展开
+  配置项树，并展开被选中 case 激活的子配置项。
+
+## 查看资源：`resource`（`res`）
+
+所有资源查询都在这一组：`list` 只读声明，`inspect`/`nodes`/`hash` 会加载资源，但都不创建控制器。
+
+```text
+maactl resource list    / maactl resource l    [-c <controller>]
+maactl resource inspect / maactl resource i    [-r <PI 资源名> | -pa/--path <目录> ...] [-ol/--overlay <目录> ...]
+maactl resource nodes   / maactl resource n    （同 inspect）
+maactl resource hash    / maactl resource h    （同 inspect）[-vf/--verify]
+```
+
+```powershell
+maactl resource l -if D:\01_Projects\github\MaaMio -c Android
+maactl resource i -if D:\01_Projects\github\MaaMio -r base
+maactl resource n -if D:\01_Projects\github\MaaMio -j
+maactl resource h -pa D:\projects\pkg\resource -vf
+```
+
+`-pa/--path` 与 `-r/--resource` 二选一：前者直接给资源根目录（相对当前目录），后者用 PI 的
+`resource.path`（相对 PI 目录）。`-ol/--overlay` 在基础路径之后加载，可重复。
+`resource hash -vf` 在 PI 模式下与 `resource.hash` 比较，不一致时以退出码 3 失败。
+
+`resource list` 只读取 `-c`；`resource` 组继承的 `-r`/`-pa`/`-ol` 只对 `inspect`/`nodes`/`hash` 生效。
+
+## 查看设备：`device`（`dev`）
+
+```powershell
+maactl device adb      / maactl device a      # 地址、ADB 路径、建议的截图/输入方式
+maactl device window   / maactl device w      # 窗口名、类名、句柄
+maactl device adb -j
+```
+
+`device window` 在 Windows / macOS / Linux 上都可用（MaaToolkit 的桌面窗口发现）：Windows 报
+窗口类名与 HWND，macOS 报应用 bundle id 与 CGWindowID，Linux 报窗口类名与 X11 窗口 id。
+旧名 `device win32` 保留为别名；`maactl adb devices` 与 `maactl win32 devices` 也仍然可用
+（隐藏命令，会打印迁移提示）。
+
+这里的地址、名称、类名、句柄/窗口 id 可以原样传给 `run` 的 `-a`/`-nm`/`-wh`/`-mid` 等选项。
+
+## 运行：`run`（`r`）
+
+```text
+maactl run task   <task-name>       / maactl run t <task-name>
+maactl run preset <preset-name>     / maactl run p <preset-name>
+maactl run node   <node-name>       / maactl run n <node-name>
+maactl run -t <task-name>           # 等价 run task
+maactl run -n <node-name>           # 等价 run node
+```
+
+执行选项按用途分组，帮助里也这样打印：
+
+| 分组 | 短形式 | 长形式 | 作用 |
+| --- | --- | --- | --- |
+| 快捷 | `-t` / `-n` | `--task` / `--node` | 等价子命令 |
+| 目标 | `-r` | `--resource` | PI 资源名（默认：配置文件 → 第一个兼容资源） |
+| 目标 | `-c` | `--controller` | PI 控制器名（默认：配置文件 → 唯一的控制器） |
+| 目标 | `-a` | `--adb-address` | ADB 设备地址（默认：配置文件 → 唯一检测到的设备） |
+| 目标 | `-nm` | `--name` | ADB 设备名（MaaToolkit 报告的名称） |
+| 目标 | `-ap` | `--adb-path` | 覆盖 adb 可执行文件；地址未被发现时也能直接建控制器 |
+| 目标 | `-wh` `-wc` `-ww` | `--win32-handle` / `-class` / `-window` | Win32 窗口选择（默认：命令行 → 配置 → PI 正则 → 唯一窗口） |
+| 目标 | `-ws` `-wm` `-wk` | `--win32-screencap` / `-mouse` / `-keyboard` | 覆盖 Win32 截图/输入方式 |
+| 目标 | `-gt` | `--gamepad-type <Xbox360\|DualShock4>` | 虚拟手柄类型（仅 Windows） |
+| 目标 | `-mw` `-mid` | `--macos-window` / `--macos-window-id` | macOS 目标窗口：标题正则或 `device window` 里的窗口 id（都不给则整屏，即 window id 0） |
+| 目标 | `-ms` `-mi` | `--macos-screencap` / `--macos-input` | macOS 截图/输入方式（默认：PI → `ScreenCaptureKit` / `GlobalEvent`） |
+| 目标 | `-pca` `-pcu` | `--playcover-address` / `--playcover-uuid` | PlayCover（macOS）服务地址与应用标识（默认：配置 → PI `playcover.uuid` → `maa.playcover`） |
+| 目标 | `-ls` `-lv` | `--linux-socket` / `--linux-vk` | Linux（wlroots）Wayland socket（默认：配置 `linux.wlr_socket_path` → `$WAYLAND_DISPLAY`）与按键码类型 |
+| 配置项 | `-opt` | `--option <name>=<value>` | 配置项取值，可重复，语法见下 |
+| 配置项 | `-of` | `--option-file <path>` | 配置项取值 JSON 文件 |
+| 配置项 | `-p` | `--preset <name>` | 把该 preset 在此 task 上的取值应用到本次运行（仅 `run task`） |
+| 配置项 | `-o` / `-ovf` | `--override` / `--override-file` | 最终 Pipeline override，二者互斥 |
+| 资源 | `-pa` | `--path <dir>` | `run node` 的资源根目录，替代 PI 资源，可重复 |
+| 资源 | `-ol` | `--overlay <dir>` | 在所选资源之后追加加载的资源根目录，可重复 |
+| 资源 | `-rh` | `--require-resource-hash` | `resource.hash` 不匹配时以退出码 3 失败（默认仅告警） |
+| 输出 | `-e` | `--events <focus\|all\|off>` | 事件输出，默认 `focus` |
+| 输出 | `-fd` | `--focus-display <list>` | 关注哪些 focus 渠道，默认 `log`；可写 `log,toast,notification,dialog,modal` 或 `all` |
+| 控制 | `-dr` | `--dry-run` | 只做选择、资源加载与覆盖计算，不连接控制器、不跑 pretask、不执行节点 |
+| 控制 | `-x` | `--explain` | 打印选择与每一层 override（可配合 `-dr`） |
+| 控制 | `-to` | `--timeout <duration>` | 超过时长后请求停止，等待确认后以退出码 7 结束 |
+| 控制 | `-sa` | `--stop-after <duration>` | 运行指定时长后停止并视为成功（调试用） |
+| 控制 | `-sto` | `--stop-timeout <duration>` | 等待原任务与停止任务结束的上限，默认 `8s` |
+| 控制 | `-na` / `-al` | `--no-agent` / `--agent-log <term\|off\|dir>` | 是否启动 agent、agent 输出去向 |
+| 控制 | `-k` / `-coe` | `--continue-on-error` | `run preset` 中某个 task 失败后继续 |
+
+平台专属的目标选项（`--win32-*`、`--gamepad-type`、`--macos-*`、`--playcover-*`、`--linux-*`）
+在任何平台上都会出现在帮助里，方便同一份脚本跨平台复用；不属于当前平台的控制器类型不会被创建，
+而是直接报错并列出本平台支持的控制器类型（`pi validate` 也会对其给出警告）。
+
+`-pa/--path` 与 `-ol/--overlay` 只在 `run node` 生效；`run task`/`run preset` 会接受这两个
+选项但不读取它们（`run task`/`run preset` 的资源来源仍是 `-r`/`--resource`）。
+
+### 停止与超时
+
+任务运行期间持续监听 Ctrl+C / SIGINT 与 SIGTERM（Windows 控制事件由 Go 运行时映射）。收到信号、
+到达 `-sa/--stop-after`，或到达 `-to/--timeout` 时，都会发送一次停止请求，然后同时等待**原任务**
+与 **stop job** 结束：`-sto/--stop-timeout` 是这段等待的上限，默认 `8s`，必须大于零；`-sa` 必须
+非负，其计时从提交主任务后开始，不包含初始化。
+
+退出码沿用既有约定：
+
+| 情况 | 退出码 |
 | --- | --- |
-| `-a, --adb-address` | ADB 设备序列号/地址，按 MaaToolkit 检测到的设备地址匹配（默认：唯一检测到的设备） |
-| `--name` | ADB 设备名称，按 MaaToolkit 检测到的设备名称匹配（默认：唯一检测到的设备） |
-| `--win32-handle` | Win32 窗口句柄，十进制或 `0x` 开头的十六进制 |
-| `--win32-class` | Win32 窗口类名正则（默认：PI `win32.class_regex`） |
-| `--win32-window` | Win32 窗口标题正则（默认：PI `win32.window_regex`） |
-| `--win32-screencap` / `--win32-mouse` / `--win32-keyboard` | 覆盖 Win32 截图 / 鼠标 / 键盘方式（默认：PI `win32` 配置） |
-| `--gamepad-type` | 虚拟手柄类型：`Xbox360`（默认）或 `DualShock4`（默认：PI `gamepad.gamepad_type`） |
-| `-c, --controller` | PI 控制器名称（默认：唯一的控制器） |
-| `-r, --resource` | PI 资源名称（默认：第一个兼容资源） |
-| `--events` | 事件输出：`focus`（默认）/ `all` / `off` |
-| `--no-agent` | 不启动 ProjectInterface agent |
-| `--agent-log` | agent 输出：`term`（默认，输出到当前终端）/ `off`（丢弃）/ 目录（每个 agent 一个日志文件） |
-| `-o, --override` / `-O, --override-file` | 最终 Pipeline override 的 JSON / 文件 |
-| `--stop-after` | 运行指定时长后停止（duration，如 `10s`） |
+| 任务正常结束 | `0` |
+| 到达 `-sa` 且确认停止完成 | `0` |
+| 到达 `-to` 且确认停止完成 | `7` |
+| Ctrl+C / SIGTERM，确认停止完成 | `8` |
+| 任务自身失败 | `6` |
+| 停止未确认（原任务卡住、stop job 失败，或等待超过 `-sto`） | `7`（由 `-to` 触发）、`6`（由 `-sa` 触发）、`8`（由信号触发） |
 
-同一个短参数在不同位置含义不同，写脚本时注意：`-v` 顶层是 `--version`、`interface` 下是
-`--validate`；`-c`/`-r` 在 `run` 下是 controller/resource，在 `interface` 下是 controllers/resources。
+停止未确认时，`maactl` 只回收 agent 子进程，**不销毁**可能仍在被调用的原生对象，由进程退出回收，
+以免在 MaaFramework 内部还在使用它们时崩溃。
 
-## 查看项目
+`-sto/--stop-timeout` 只限制等待停止，不是所有清理操作的总期限；初始化阶段取消、原生销毁调用卡住、
+宿主失联检测与完整 JSONL 最终结果不在该契约内。
 
-`interface` 使用操作参数，不再使用 `interface tasks` 等子命令。每次选择一个操作：`--show/-s`、
-`--controllers/-c`、`--resources/-r`、`--tasks/-t` 或 `--validate/-v`。
+### `run task`
 
 ```powershell
-# PI 概览
-maactl interface --show -f D:\01_Projects\github\MaaMio
+# 用配置文件里的控制器/资源/设备直接跑（MaaMio 示例）
+maactl run -t 签到 -if D:\01_Projects\github\MaaMio -sa 30s
 
-# 列出控制器、资源与 task
-maactl interface --controllers -f D:\01_Projects\github\MaaMio
-maactl interface --resources -f D:\01_Projects\github\MaaMio
-maactl interface --tasks -f D:\01_Projects\github\MaaMio
+# 只看最终 override，不执行
+maactl run -t 签到 -if D:\01_Projects\github\MaaMio -dr -x
 
-# 对应的短参数形式
-maactl interface -s -f D:\01_Projects\github\MaaMio
-maactl interface -c -f D:\01_Projects\github\MaaMio
-maactl interface -r -f D:\01_Projects\github\MaaMio
-maactl interface -t -f D:\01_Projects\github\MaaMio
-
-# 验证 PI 是否可加载；JSON 输出方便脚本处理
-maactl interface --validate -f D:\01_Projects\github\MaaMio
-maactl interface --tasks -f D:\01_Projects\github\MaaMio --json
+# 显式选择，并覆盖配置项
+maactl run task "常规作战" -if D:\projects\demo `
+  -c Android -r Official -a 127.0.0.1:16384 `
+  -opt 作战关卡="3-9 厄险（百灵百验鸟）" `
+  -opt 复现次数=x3 `
+  -opt 战斗划火柴=普通划火柴,蓄力划火柴 `
+  -e all -to 30m
 ```
 
-PI 中的 `import` 会随主 `interface.json` 一同加载。资源路径相对于该 PI 文件所在目录解析。
+任务名按 `name` 精确匹配 → 当前语言下的 `label` → 大小写不敏感的 `name` 顺序解析。
 
-文本列表带有列名，并按终端显示宽度对齐中文和英文。`name` 是命令使用的名称，`label` 是 PI 中的
-显示名称；任务的 `entry` 是入口节点，控制器的 `type` 是类型，资源的 `path` 是资源路径。
-缺失值显示为 `-`，空列表显示“无数据”；`--json/-j` 仍输出原有 JSON 结构。
+### `run preset`
 
-## 查看设备与资源
-
-先用 ADB 设备列表确定要使用的设备地址；运行 Win32 控制器时先用窗口列表确定窗口句柄、类名和标题：
+按 preset 的 `task` 数组顺序运行 `enabled != false` 的 task；前一个失败即停止（除非 `-k`）。
+命令行 `-opt` 只覆盖该 task 实际引用的同名配置项。
 
 ```powershell
-maactl adb devices
-maactl adb devices --json
-maactl win32 devices
-maactl win32 devices --json
+maactl run preset 刷日常 -if D:\projects\demo -e off
 ```
 
-加载资源并查看其元数据或可运行的 Pipeline 节点：
+### `run node`
+
+直接以节点名作为任务入口。资源可以来自 PI（`-r`）或 `-pa/--path`：
 
 ```powershell
-# 默认加载第一个资源
-maactl resource inspect -f D:\01_Projects\github\MaaMio
-
-# 明确选择名为 base 的资源
-maactl resource nodes `
-  -f D:\01_Projects\github\MaaMio `
-  --resource base
-
-# 等价的快捷形式
-maactl resource -i -f D:\01_Projects\github\MaaMio
-maactl resource -n -r base -f D:\01_Projects\github\MaaMio
+maactl run node "签到-开始签到" -if D:\01_Projects\github\MaaMio -e all
+maactl run node Login -pa D:\pkg\resource -e all
 ```
 
-## 运行 task 与节点
+### 配置项取值语法
 
-`run task <task-name>` 会先在 PI 中查找 task，再运行 task 的 `entry` 节点；`run node <node-name>`
-则直接运行指定 Pipeline 节点。两者都支持 `-t` 和 `-n` 快捷形式。
-
-```powershell
-# 运行 PI 中的指定 task。该示例任务持续运行，10 秒后自动发送停止信号。
-maactl run task "自动挂机卖蛋" `
-  -f D:\01_Projects\github\MaaMio `
-  --stop-after 10s
-
-# task 的快捷形式
-maactl run -t "自动挂机卖蛋" `
-  -f D:\01_Projects\github\MaaMio `
-  --stop-after 10s
-
-# 直接运行指定 Pipeline 节点
-maactl run node "签到-开始签到" `
-  -f D:\01_Projects\github\MaaMio `
-  --stop-after 10s
-
-# 节点的快捷形式，并显式选择 ADB 设备
-maactl run -n "签到-开始签到" `
-  -f D:\01_Projects\github\MaaMio `
-  --adb-address 127.0.0.1:16384 `
-  --stop-after 10s
-
-# 显式选择 PI controller、资源和 ADB 设备
-maactl run -n "签到-开始签到" `
-  -f D:\01_Projects\github\MaaMio `
-  --controller Android `
-  --resource base `
-  --adb-address 127.0.0.1:16384 `
-  --stop-after 10s
+```text
+-opt 复现次数=x3                          # select / switch：单个 case 名
+-opt 刷完全部体力=No                       # switch 也接受 y/n、yes/no
+-opt 战斗划火柴=普通划火柴,蓄力划火柴        # checkbox：逗号分隔
+-opt '战斗划火柴=["普通划火柴","连续划火柴"]' # checkbox：JSON 数组
+-opt 自定义关卡.章节号=4                    # input / hotkey：name.field=value
 ```
 
-未指定选择参数时，CLI 使用以下规则：
+`checkbox` 的多个 case 按 `cases` 定义顺序合并，与输入顺序无关，并校验
+`min_count`/`max_count`。密码字段（`inputs[].password = true`）不能用 `-opt` 传明文，
+只能用 `-of` / 配置文件 / `{"env":"NAME"}` 引用，输出中一律掩码为 `******`。
 
-- controller：PI 中只有一个 controller 时自动选择；多个 controller 时要求 `--controller/-c`。
-- resource：选择第一个与 controller 兼容的资源；可通过 `--resource/-r` 指定。
-- ADB 设备：通过 `-a/--adb-address` 按地址、`--name` 按名称匹配 MaaToolkit 检测到的设备；两者都不给时，
-  恰好检测到一个设备则自动选择，未检测到或多个设备时要求显式匹配。连接使用的 ADB 路径、config 与
-  建议的截图/输入方式都取自该设备的检测结果（`maactl adb devices` 可查看地址与名称）。
-- Win32 窗口：通过 `--win32-handle`、`--win32-class`、`--win32-window` 匹配 MaaToolkit 检测到的桌面
-  窗口；都不给时回退到 PI 控制器的 `win32.class_regex` / `win32.window_regex`，再都不给时恰好一个窗口
-  则自动选择。多个窗口同时匹配会报错并列出候选项，此时用更精确的正则或句柄缩小范围。
+### 选择与覆盖顺序
 
-`--stop-after` 适合验证会持续运行的任务；正常的有限 task 不需要该参数。
-
-### 停止行为
-
-任务执行期间持续监听 Ctrl+C / SIGINT 和 SIGTERM（Windows 控制事件由 Go
-运行时映射）。取消或达到 `--stop-after` 后，发送一次停止请求，同时等待原任务
-和 stop job 结束；`--stop-timeout` 设置该等待上限，默认 `8s`，必须大于零。
-`--stop-after` 必须非负，其计时从提交主任务后开始，不包括初始化。
-
-保持现有退出码约定：成功为 `0`，错误为 `1`。达到 `--stop-after` 且确认停止成功时
-返回 `0`；用户取消、任务失败、停止失败或等待停止超时返回 `1`，具体原因写入错误信息。
-停止未确认成功时，回收 Agent 子进程并跳过原生对象销毁，
-由 CLI 进程退出回收内存，避免销毁仍在被使用的对象。
-
-`--stop-timeout` 仅限制等待停止，不是所有资源清理操作的总期限；初始化阶段取消、
-原生销毁调用卡住、宿主失联检测和完整 JSONL 最终结果不在本次契约内。
-
-### Win32 控制器
-
-PI controller 的 `type` 为 `Win32` 时，`maactl` 会操作桌面窗口而非 ADB 设备。窗口选择优先级为
-命令行（`--win32-handle` / `--win32-class` / `--win32-window`，多个条件同时生效）> PI
-`win32.class_regex` / `win32.window_regex` > 唯一检测到的窗口。
-
-截图与输入方式来自 PI 的 `win32.screencap` / `win32.mouse` / `win32.keyboard`，可用同名命令行选项覆盖：
-
-- 截图默认启用全部方式，MaaFramework 会自动选最快可用的一种。
-- 鼠标与键盘默认为 `Seize`（兼容性最高、无需管理员权限）。Win32 输入方式不能按位或组合，只能选一种。
-
-```powershell
-# 按 PI 的 win32 配置运行 Win32 控制器
-maactl run -c PC -t 每日任务 -f D:\projects\desktop
-
-# 显式指定窗口，并换用后台截图方式
-maactl run -c PC -t 每日任务 -f D:\projects\desktop `
-  --win32-class UnityWndClass --win32-window "原神" `
-  --win32-screencap FramePool --win32-mouse SendMessage
-
-# 用句柄精确定位窗口（maactl win32 devices --json 可读到 handle）
-maactl run -c PC -n Login --win32-handle 0x1A2B3C
+```text
+资源：resource.path[0..n] → controller.attach_resource_path[*] → --overlay[*]
+覆盖：global_option → resource.option → controller.option → task.option
+      → task.pipeline_override → --override / --override-file
 ```
 
-当前构建提供 `Adb`、`Win32`、`Gamepad` 三种控制器的构造能力；PI 中出现 `MacOS`、`PlayCover`、`Linux`
-等类型时会直接报错，而不是在连接阶段失败。
+同一节点内的同名顶层字段由后者整体替换（数组整体替换）。`resource.hash` 在加载完
+`resource.path` 后、加载 `attach_resource_path` 之前校验。
 
-### Gamepad 控制器
+### pretask 与 agent
 
-PI controller 的 `type` 为 `Gamepad` 时，`maactl` 创建虚拟手柄（Xbox 360 或 DualShock 4），需要系统安装
-[ViGEm Bus Driver](https://github.com/ViGEm/ViGEmBus/releases)。
+- PI 声明 `pretask` 时，会在创建控制器**之前**按顺序执行；CWD 为 `interface.json` 所在目录；
+  `pretask.option` 引用的配置项取值会序列化成单行 JSON 追加为最后一个参数；非零退出码以
+  退出码 5 结束。
+- 声明 `agent` 时，会在资源加载完成后启动并连接，注入协议 v2.5.0 约定的
+  `PI_INTERFACE_VERSION`、`PI_CLIENT_NAME`、`PI_CLIENT_VERSION`、`PI_CLIENT_LANGUAGE`、
+  `PI_CLIENT_MAAFW_VERSION`、`PI_VERSION`、`PI_CONTROLLER`、`PI_RESOURCE`
+  （后两者为已解析 i18n 的单行 JSON）。输出默认转发到终端并加 `[agent]` 前缀。
 
-- 手柄类型：PI `gamepad.gamepad_type`（`Xbox360` / `DualShock4`，也接受 `DS4`），默认 `Xbox360`，可用
-  `--gamepad-type` 覆盖。
-- 截图窗口（可选）：使用与 Win32 相同的窗口选择选项（`--win32-handle/--win32-class/--win32-window` >
-  PI `gamepad.class_regex`/`gamepad.window_regex`）。**识别需要截图**，所以需要画面识别的任务也要配置窗口正则；
-  未配置窗口时控制器只驱动手柄，流水线无法识别画面。
-- 截图方式（可选）：PI `gamepad.screencap` 或 `--win32-screencap`，默认全部方式，仅在配置了窗口时有效。
+### 事件与 focus
 
-```powershell
-# 虚拟 Xbox 360 手柄，并截图 MuMu 窗口用于识别
-maactl run -c Pad -t 每日任务 -f D:\projects\game `
-  --win32-window MuMu --gamepad-type Xbox360 --win32-screencap PrintWindow
-```
-
-## Agent 子进程
-
-`interface.json` 声明 `agent`（单个对象或对象数组）时，`maactl` 会在**资源加载完成后**启动并连接
-AgentServer，然后才连接控制器、执行任务；`--no-agent` 可跳过启动。
-
-- 启动：`child_exec` 为系统 PATH 中的可执行文件；含路径分隔符时相对 `interface.json` 所在目录解析，
-  子进程的工作目录同样是该目录。
-- 连接：`maactl` 创建通信套接字，把 identifier 追加为子进程的最后一个参数（`agent.identifier` 可指定
-  固定值，否则自动生成）。连接成功后，agent 注册的自定义识别与动作才会用于本次资源。
-- 静默启动：Windows 下子进程不创建控制台窗口，只在后台运行。
-- 输出：默认转发到当前终端（stdout/stderr 分别对应），每行加 `[agent]` 前缀（声明多个 agent 时为
-  `[agent 1]`、`[agent 2]`）；`--agent-log off` 丢弃；`--agent-log <目录>` 写入该目录下的 `agent.log`
-  （多个 agent 时为 `agent-N.log`，每次运行覆盖上一次，文件内不添加前缀）。目录无法创建或日志无法
-  写入时任务直接失败。
-- 连接结果：成功时输出 `Agent ... connected (custom actions: ...; custom recognitions: ...)`；
-  失败时以非零状态退出并输出 `agent ... failed to connect: ...`（子进程提前退出、被中断或长时间无法
-  连接）。
-
-```powershell
-# 默认：agent 输出转发到当前终端
-maactl run -t 打开游戏 -f D:\MAA_YYS -c Android -r 官服2 -a 127.0.0.1:16384
-
-# 不输出 agent 日志
-maactl run -t 打开游戏 -f D:\MAA_YYS --agent-log off
-
-# agent 日志写入目录，每个 agent 一个文件
-maactl run -t 打开游戏 -f D:\MAA_YYS --agent-log D:\logs\maactl
-```
-
-## 事件与 focus 输出
-
-运行时会注册 MaaFramework 的 tasker 与 context sink。默认 `--events focus`，只输出 PI Pipeline
-`focus` 配置命中的文本，例如 `Node.Recognition.Starting: "开始签到"` 会输出：
+默认 `-e focus`：只输出 PI Pipeline `focus` 命中的文本，例如 `签到-开始签到` 的
+`Node.Recognition.Starting: "开始签到"` 会输出：
 
 ```text
 开始签到
 ```
 
-```powershell
-# 默认只输出 focus 文本
-maactl run -n "签到-开始签到" `
-  -f D:\01_Projects\github\MaaMio `
-  --stop-after 10s
+`-fd/--focus-display` 决定哪些 `display` 渠道会输出（默认只有 `log`）；CLI 是日志终端，
+`modal` 只会打印内容，不会阻塞等待。`-e all` 输出全部 sink 事件及其详情，
+`-e off` 不输出。加 `-j` 时 sink 事件变为 JSON 行。
 
-# 输出全部 MaaFramework sink 事件及其详情
-maactl run -n "签到-开始签到" `
-  -f D:\01_Projects\github\MaaMio `
-  --events all `
-  --stop-after 10s
-
-# 不输出 sink 事件
-maactl run -n "签到-开始签到" `
-  -f D:\01_Projects\github\MaaMio `
-  --events off `
-  --stop-after 10s
-```
-
-## 覆盖 Pipeline
-
-`--override/-o` 接受最终 Pipeline override 的 JSON；`--override-file/-O` 从文件读取相同内容。
-两者不能同时使用。
+## 查看客户端配置：`config`（`cfg`）
 
 ```powershell
-# 在命令行提供 JSON。PowerShell 中单引号可保留 JSON 双引号。
-maactl run -n "签到-开始签到" `
-  -f D:\01_Projects\github\MaaMio `
-  -o '{"签到-开始签到":{"enabled":false}}'
-
-# 从文件读取 override JSON
-maactl run task "自动挂机卖蛋" `
-  -f D:\01_Projects\github\MaaMio `
-  --override-file D:\projects\overrides\run.json `
-  --stop-after 10s
+maactl config path / maactl config p    -if D:\01_Projects\github\MaaMio   # 配置文件路径
+maactl config show / maactl config s    -if D:\01_Projects\github\MaaMio   # 生效的控制器/资源/设备/取值
 ```
+
+掩码规则：只有 ProjectInterface 把该 option 声明为 `inputs[].password` 的字段时，取值才显示为
+`******`；`env` 引用只显示变量名（不是密文）；普通 option 取值原样显示；没有 ProjectInterface、
+或该 option 未被声明时一律掩盖。
 
 ## 帮助与 JSON
 
-`-h` 与 `--help` 等价，`maactl help <command>` 输出相同内容。
-
-顶层帮助只列出命令与一句话说明、全局参数和示例，不展开各命令的参数；带子命令的命令帮助列出自身
-参数与子命令说明；叶子命令列出全部可用参数，共享的执行参数只定义一次并标注来源（如
-`Execution Flags (inherited from "maactl run")`）。`--version` 的短参数是 `-v`，与
-`interface --validate` 的 `-v` 不冲突：前者只在顶层可用，后者只在 `interface` 下。
+`-h` 与 `--help` 等价，`maactl help <command>` 输出相同内容；`maactl version`（`ver`）
+等价 `maactl -v`。帮助是一行标题 + 说明 + 用法 + 命令表 + 按用途分组的选项 + 一个示例，
+选项按声明顺序排列，全局选项只在末尾打印一次：
 
 ```powershell
 maactl -h
-maactl --help
 maactl run -h
-maactl run --help
 maactl run task -h
-maactl run task --help
-maactl resource --help
-maactl help run
+maactl help pi tasks
 maactl -v
-maactl --version
 ```
 
-`--json/-j` 为项目查询、资源查询和设备查询提供 JSON 输出。运行命令与 `--json` 一同使用时，
-sink 输出也会变为 JSON。
+`-j/--json` 对查询命令输出结构化结果；对 `run` 则 sink 事件变成 JSON 行，并在结束时输出摘要：
 
-## 已公布但尚未实现
+```json
+{
+  "interface": "D:\\01_Projects\\github\\MaaMio\\interface.json",
+  "resource": "base",
+  "resource_paths": ["D:\\01_Projects\\github\\MaaMio\\resource\\base"],
+  "controller": "Android",
+  "task": "签到",
+  "entry": "签到-开始签到",
+  "status": "success",
+  "elapsed_ms": 12034,
+  "selections": [
+    { "name": "复现次数", "layer": "task.option", "source": "cli", "value": "x3" }
+  ],
+  "effective_override": { "SetReplaysTimes": { "expected": "3" } }
+}
+```
 
-帮助中以 `(planned)` 标注的命令、以及归入 `Planned Flags` 段的参数，属于已预留的 CLI 契约，
-当前会明确返回未实现错误：
+运行期输出分流：进度信息与错误走 stderr，focus 文本与最终摘要走 stdout，方便
+`maactl run ... > focus.log` 只收集任务输出。
 
-- `interface --options`、`interface --presets`
-- `resource hash`
-- `run preset <name>`
-- `--option/-p`、`--option-file`、`--overlay`、`--dry-run`、`--explain`
+## 排查运行库：`selfcheck`（隐藏命令）
+
+```bash
+maactl selfcheck
+# MaaFramework v5.13.1 (linux-x86_64, bundled) from /home/me/.cache/maactl/maafw/linux-x86_64-1f2a3b4c5d6e7f80/bin
+```
+
+它按与其它命令相同的方式加载 MaaFramework（`-lib`/`--lib-dir` → 自带运行库 → `./maafw/bin`），
+打印实际加载到的版本、平台与来源；加载失败时以退出码 1 结束。版本号取自运行库导出的接口，
+项目里没有内置的版本字符串：`-v`/`--version` 走同一条路径取版本，只是取不到时退化为只打印 maactl
+自身版本（加 `-vb` 会说明原因），而这里把取不到当作失败。用于区分“运行库有问题”与“项目/设备有问题”，
+CI 也在每个平台上跑它。它不出现在 `-h` 里。
+
+## 迁移对照（第一版 → 第二版）
+
+| 旧写法 | 新写法 |
+| --- | --- |
+| `maactl interface --show` | `maactl pi info`（`maactl pi i`） |
+| `maactl interface --controllers/--tasks/--validate` | `maactl pi controllers/tasks/validate` |
+| `maactl interface --resources` | `maactl resource list`（`maactl resource l`） |
+| `maactl interface --options/--presets` | `maactl pi options/presets`（已实现） |
+| `maactl adb devices` | `maactl device adb`（旧命令保留迁移提示） |
+| `maactl win32 devices` | `maactl device window`（`device win32` 仍为别名） |
+| `maactl resource -i` / `maactl resource -n` | `maactl resource inspect` / `maactl resource nodes` |
+| `maactl run task <name>` / `run -t` | 不变 |
+| `maactl run node <name>` / `run -n` | 不变 |
+| `--option/-p`（旧版计划） | `-opt/--option`；`-p` 改为 `--preset` |
+| `--override/-o` | 不变；`--override-file` 用 `-ovf` |
+| `--interface/-f` | 不变，另有 `-if` |
+| `--json/-j` | 不变 |
+
+> 第一版里 `-v` 在 `interface` 下表示 `--validate`，`-c`/`-r` 在 `interface` 下表示
+> controllers/resources，`-i` 在 `resource` 下表示 inspect。第二版取消了这些重载。

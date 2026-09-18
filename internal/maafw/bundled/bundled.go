@@ -4,6 +4,8 @@
 // The payload directory is filled by tools/packmaafw at build time and read
 // back here at run time: the container archive is unpacked into a cache
 // directory, which is then handed to MaaFramework as its library directory.
+// The payload is a plain copy of a MaaFramework runtime directory—maactl keeps
+// no MaaFramework version of its own, it asks the loaded libraries.
 //
 // Embedding is opt-in through the "bundled" build tag, so the same source tree
 // produces both a self-contained executable and a small one that loads
@@ -26,6 +28,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"maactl/internal/platform"
 )
 
 // payloadDir is the embedded directory that tools/packmaafw populates. It
@@ -33,16 +37,18 @@ import (
 // payload was built in.
 const payloadDir = "payload"
 
-// mainDLL is extracted last, so its presence proves the cache holds a complete
-// extraction.
-const mainDLL = "MaaFramework.dll"
+// mainLibrary is the library extracted last, so its presence proves the cache
+// holds a complete extraction. It is the one library MaaFramework cannot be
+// loaded without, whatever the platform spells it as.
+func mainLibrary() string {
+	return platform.Host().FrameworkLibrary()
+}
 
 // current reads the embedded payload once per process.
 var current = sync.OnceValue(load)
 
 type payload struct {
 	container []byte
-	version   string
 }
 
 // Compiled reports whether this build was compiled to carry MaaFramework.
@@ -56,52 +62,55 @@ func Available() bool {
 	return len(current().container) > 0
 }
 
-// Version returns the MaaFramework version of the embedded libraries, or ""
-// when the build is unbundled or the version is unknown.
-func Version() string {
-	return current().version
+// CacheID identifies the embedded payload so that libraries extracted from a
+// different payload are never reused. It is derived from the payload bytes, so
+// it changes exactly when the packed runtime does—no version has to be tracked
+// for that.
+func CacheID() string {
+	return cacheID(current())
 }
 
-// CacheID identifies the embedded payload so that libraries extracted from a
-// different payload are never reused.
-func CacheID() string {
-	if version := sanitize(current().version); version != "" {
-		return version
+// cacheID derives the cache directory name of one payload: the host platform
+// for readability, plus a digest of the payload that keeps two runtimes apart.
+func cacheID(have payload) string {
+	if len(have.container) == 0 {
+		return ""
 	}
-	sum := sha256.Sum256(current().container)
-	return hex.EncodeToString(sum[:8])
+	sum := sha256.Sum256(have.container)
+	return platform.Host().ID() + "-" + hex.EncodeToString(sum[:8])
 }
 
 // Extract writes the embedded libraries into target and reports how many files
 // were written. It does nothing when target already holds an extraction.
 func Extract(target string) (int, error) {
-	container := current().container
-	if len(container) == 0 {
+	have := current()
+	if len(have.container) == 0 {
 		return 0, fmt.Errorf("this maactl build does not carry MaaFramework libraries")
 	}
-	return ExtractZip(container, target)
+	return ExtractZip(have.container, target)
 }
 
 // ExtractZip extracts a container produced by tools/packmaafw into target,
 // creating parent directories as needed. It reports how many files were written
 // and writes nothing when target already holds an extraction.
 func ExtractZip(container []byte, target string) (int, error) {
-	if fileExists(filepath.Join(target, mainDLL)) {
+	mainName := mainLibrary()
+	if fileExists(filepath.Join(target, mainName)) {
 		return 0, nil
 	}
 	reader, err := zip.NewReader(bytes.NewReader(container), int64(len(container)))
 	if err != nil {
 		return 0, fmt.Errorf("read embedded MaaFramework payload: %w", err)
 	}
-	if !hasEntry(reader, mainDLL) {
-		return 0, fmt.Errorf("embedded MaaFramework payload has no %s", mainDLL)
+	if !hasEntry(reader, mainName) {
+		return 0, fmt.Errorf("embedded MaaFramework payload has no %s", mainName)
 	}
 	written := 0
-	// Every other file is written before mainDLL, so an extraction interrupted
-	// halfway is recognised as incomplete and redone on the next run.
+	// Every other file is written before the main library, so an extraction
+	// interrupted halfway is recognised as incomplete and redone on the next run.
 	for _, main := range []bool{false, true} {
 		for _, file := range reader.File {
-			if strings.HasSuffix(file.Name, "/") || (file.Name == mainDLL) != main {
+			if strings.HasSuffix(file.Name, "/") || (file.Name == mainName) != main {
 				continue
 			}
 			name, err := targetPath(target, file.Name)
@@ -117,7 +126,9 @@ func ExtractZip(container []byte, target string) (int, error) {
 	return written, nil
 }
 
-// readPayload collects the container and version from an embedded payload tree.
+// readPayload collects the container from an embedded payload tree. Anything
+// but the container archive is ignored: the payload carries no metadata, so
+// there is no version or platform file to read or to keep in sync.
 func readPayload(fsys fs.FS) payload {
 	entries, err := fs.ReadDir(fsys, payloadDir)
 	if err != nil {
@@ -125,16 +136,12 @@ func readPayload(fsys fs.FS) payload {
 	}
 	var result payload
 	for _, entry := range entries {
-		name := path.Join(payloadDir, entry.Name())
-		switch {
-		case strings.HasSuffix(entry.Name(), ".zip"):
-			if data, err := fs.ReadFile(fsys, name); err == nil {
-				result.container = data
-			}
-		case entry.Name() == "version.txt":
-			if data, err := fs.ReadFile(fsys, name); err == nil {
-				result.version = strings.TrimSpace(string(data))
-			}
+		if !strings.HasSuffix(entry.Name(), ".zip") {
+			continue
+		}
+		if data, err := fs.ReadFile(fsys, path.Join(payloadDir, entry.Name())); err == nil {
+			result.container = data
+			break
 		}
 	}
 	return result
@@ -150,6 +157,11 @@ func targetPath(target, name string) (string, error) {
 	return filepath.Join(target, filepath.FromSlash(relative)), nil
 }
 
+// writeFile writes one archive entry atomically: the data goes to a temporary
+// file next to the destination and is renamed into place only once it is
+// complete. An interrupted extraction therefore never leaves a half-written
+// file behind, which matters most for the main library that doubles as the
+// completeness marker of the cache directory.
 func writeFile(name string, file *zip.File) error {
 	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 		return err
@@ -159,15 +171,24 @@ func writeFile(name string, file *zip.File) error {
 		return fmt.Errorf("extract %s: %w", file.Name, err)
 	}
 	defer reader.Close()
-	writer, err := os.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	temp := name + ".tmp"
+	writer, err := os.OpenFile(temp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
 	if _, err := io.Copy(writer, reader); err != nil {
 		writer.Close()
+		os.Remove(temp)
 		return fmt.Errorf("extract %s: %w", file.Name, err)
 	}
 	if err := writer.Close(); err != nil {
+		os.Remove(temp)
+		return fmt.Errorf("extract %s: %w", file.Name, err)
+	}
+	// Renaming inside one directory is atomic, so the destination is either
+	// the previous file or the complete new one.
+	if err := os.Rename(temp, name); err != nil {
+		os.Remove(temp)
 		return fmt.Errorf("extract %s: %w", file.Name, err)
 	}
 	return nil
@@ -182,21 +203,8 @@ func hasEntry(reader *zip.Reader, name string) bool {
 	return false
 }
 
+// fileExists reports whether name is an existing regular file.
 func fileExists(name string) bool {
 	info, err := os.Stat(name)
 	return err == nil && !info.IsDir()
-}
-
-// sanitize keeps only characters that are safe in a directory name.
-func sanitize(value string) string {
-	var b strings.Builder
-	for _, r := range value {
-		switch {
-		case r >= '0' && r <= '9', r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
-			b.WriteRune(r)
-		case r == '.', r == '-', r == '_':
-			b.WriteRune(r)
-		}
-	}
-	return strings.Trim(b.String(), ".-")
 }

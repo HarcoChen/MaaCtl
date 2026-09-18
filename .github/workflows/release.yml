@@ -6,7 +6,7 @@ on:
       - "v[0-9]*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -31,12 +31,39 @@ jobs:
         id: meta
         run: python3 .github/scripts/release.py metadata --tag "${GITHUB_REF_NAME}" >> "${GITHUB_OUTPUT}"
 
+  # Every platform MaaFramework ships a desktop release for is built on a native
+  # runner: the executables are verified by running them, which needs the
+  # platform's own libraries. Each job downloads the matching MaaFramework
+  # release into maafw/, packs the payload from maafw/bin, and uploads one
+  # archive holding both executables.
   build:
-    name: Build Windows executables
-    runs-on: windows-latest
+    name: Build ${{ matrix.platform }}
     needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: win-x86_64
+            runner: windows-latest
+          - platform: win-aarch64
+            runner: windows-11-arm
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+          - platform: linux-aarch64
+            runner: ubuntu-24.04-arm
+          - platform: macos-x86_64
+            runner: macos-15-intel
+          - platform: macos-aarch64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
     env:
       CGO_ENABLED: "0"
+      VERSION: ${{ needs.version.outputs.version }}
+      # The one and only place a MaaFramework release is pinned. Everything else
+      # is version-agnostic: the packer packs whatever lands in maafw/bin, and
+      # maactl reads the version from the loaded runtime (see `selfcheck`), so
+      # bumping this line is the whole upgrade.
+      MAAFW_VERSION: v5.13.1
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -45,41 +72,38 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Bundle MaaFramework
-        shell: pwsh
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install the Linux runtime dependencies
+        if: runner.os == 'Linux'
+        run: |
+          # MaaToolkit links against libdbus, and the libc++ the release ships
+          # against libatomic; without them the runtime cannot be loaded at all,
+          # which `maactl selfcheck` catches below.
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libdbus-1-3 libatomic1
+      - name: Download the MaaFramework release
         env:
           GH_TOKEN: ${{ github.token }}
+        run: python .github/scripts/fetch_maafw.py --platform ${{ matrix.platform }} --version "${{ env.MAAFW_VERSION }}"
+      - name: Pack the MaaFramework payload
+        # No platform or version arguments: the packer copies maafw/bin as it is.
         run: go run ./tools/packmaafw
       - name: Test
         run: |
           go test ./...
           go test -tags bundled ./...
-      - name: Build executables
-        shell: pwsh
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          # Self-contained: MaaFramework is embedded and unpacked on first use.
-          go build -trimpath -tags bundled -ldflags "-s -w -X main.version=$env:VERSION" -o dist/maactl.exe ./cmd/maactl
-          # Lite: loads MaaFramework from ./maafw/bin or --lib-dir.
-          go build -trimpath -ldflags "-s -w -X main.version=$env:VERSION" -o dist/maactl-lite.exe ./cmd/maactl
-      - name: Verify executables
-        shell: pwsh
-        run: |
-          $full = "$(& dist/maactl.exe --version)"
-          if ($full -notmatch 'MaaFramework v') { throw "dist/maactl.exe does not carry MaaFramework: $full" }
-          $lite = "$(& dist/maactl-lite.exe --version)"
-          if ($lite -match 'MaaFramework v') { throw "dist/maactl-lite.exe unexpectedly carries MaaFramework: $lite" }
-          Write-Host $full
-          Write-Host $lite
-      - name: Upload executables
+      - name: Build, verify, and pack
+        # The version comes from the version job rather than a shell variable:
+        # Windows runners use PowerShell, where $VERSION is an unset variable.
+        run: python .github/scripts/build_release.py --platform ${{ matrix.platform }} --version "${{ needs.version.outputs.version }}"
+      - name: Upload the platform archive
         uses: actions/upload-artifact@v7
         with:
-          name: maactl-windows-amd64
-          path: |
-            dist/maactl.exe
-            dist/maactl-lite.exe
+          name: maactl-${{ matrix.platform }}
+          path: dist/*.zip
           if-no-files-found: error
 
   changelog:
@@ -110,16 +134,42 @@ jobs:
     name: Publish release
     runs-on: ubuntu-latest
     needs: [version, build, changelog]
+    # Only this job writes: `gh release create/edit/upload` needs it, while the
+    # version, build and changelog jobs above stay read-only.
+    permissions:
+      contents: write
     steps:
-      - name: Download executables
+      - name: Download every platform archive
         uses: actions/download-artifact@v8
         with:
-          name: maactl-windows-amd64
+          pattern: maactl-*
           path: dist
+          merge-multiple: true
       - name: Download changelog
         uses: actions/download-artifact@v8
         with:
           name: changelog
+      - name: List the archives to publish
+        run: ls -l dist
+      - name: Add the artifact table to the notes
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          python3 - >> CHANGELOG.md <<'PY'
+          import glob
+          import os
+
+          version = os.environ["VERSION"]
+          prefix = f"maactl-{version}-"
+          lines = ["", "### 下载", "", "| 平台 | 文件 |", "| --- | --- |"]
+          for path in sorted(glob.glob("dist/*.zip")):
+              name = os.path.basename(path)
+              platform = name[len(prefix):-len(".zip")] if name.startswith(prefix) else name
+              lines.append(f"| `{platform}` | `{name}` |")
+          lines.append("")
+          print("\n".join(lines))
+          PY
+          cat CHANGELOG.md
       - name: Create or update GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -140,11 +190,18 @@ jobs:
             flags+=(--prerelease=false)
           fi
 
+          shopt -s nullglob
+          assets=(dist/*.zip)
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "::error::no platform archive was built; nothing to publish"
+            exit 1
+          fi
+
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" "${flags[@]}"
-            gh release upload "$TAG" dist/maactl.exe dist/maactl-lite.exe --clobber
+            gh release upload "$TAG" "${assets[@]}" --clobber
           else
-            gh release create "$TAG" dist/maactl.exe dist/maactl-lite.exe "${flags[@]}"
+            gh release create "$TAG" "${assets[@]}" "${flags[@]}"
           fi
 
   # The wiring from the npm task to the release is deliberate: the reusable

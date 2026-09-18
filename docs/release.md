@@ -4,27 +4,50 @@
 `.github/workflows/release.yml`：
 
 1. `version`：校验 tag 是否符合 SemVer，计算是否预发布、预发布通道和上一个正式版 tag；
-2. `build`：在 Windows runner 上跑 `go test ./...` 与 `go test -tags bundled ./...`，执行
-   `go run ./tools/packmaafw` 下载并打包 MaaFramework（版本由 `maafw.version` 钉住），再用
-   `-ldflags "-X main.version=<tag>"` 构建两个 exe，并校验一个确实携带了 MaaFramework、另一个
-   确实没有：
-   - `dist/maactl.exe`：自带 MaaFramework（`-tags bundled`）；
-   - `dist/maactl-lite.exe`：不携带 DLL；
+2. `build`：**每个平台一个 runner**（见下表），每个 job 都执行同一套步骤：
+   - `.github/scripts/fetch_maafw.py --platform <平台> --version <MaaFramework 版本>` 下载对应平台的
+     MaaFramework release 并解包到 `maafw/`（换平台会整目录替换，不会留下上一个平台的运行库）；
+   - `go run ./tools/packmaafw` 把 `maafw/bin` 原样（不看版本与平台）打成 payload；
+   - `go test ./...` 与 `go test -tags bundled ./...`；
+   - `.github/scripts/build_release.py` 构建并**实际运行**两个 exe 校验（自带版必须报告
+     MaaFramework 版本、轻量版必须不带；两个都要能通过隐藏命令 `selfcheck` 真正加载运行库），
+     然后把它们压成一个 `maactl-<version>-<platform>.zip` 上传为 artifact；
 3. `changelog`：生成当前版本与上一个正式版之间的更新日志，按 feat/fix/perf/refactor/docs 等分组
    并附 commit 链接；
-4. `release`：等以上两个任务完成后统一创建 GitHub Release，并同时上传两个 exe。正式版发布为
-   Latest；`-alpha`/`-beta`/`-rc` 等预发布版本标记为 Pre-release（标题带通道名），不会成为 Latest。
-   重复执行会更新已有 Release 并覆盖 exe；
+4. `release`：汇总所有平台的压缩包，在更新日志末尾追加下载表，然后创建/更新 GitHub Release
+   （正式版发布为 Latest；`-alpha`/`-beta`/`-rc` 等预发布版本标记为 Pre-release（标题带通道名），
+   不会成为 Latest；重复执行会更新已有 Release 并覆盖产物）；
 5. `npm`：调用可复用工作流 `.github/workflows/npm-publish.yml`，把该 tag 对应的版本发布到 npm。
    正式版打 `latest`，预发布版本按通道打 `alpha`/`beta`/`rc`。
 
-```powershell
+构建矩阵（与 MaaFramework 的 release 平台一一对应）：
+
+| 平台 | artifact / 产物 | runner |
+| --- | --- | --- |
+| `win-x86_64` | `maactl-<version>-win-x86_64.zip` | `windows-latest` |
+| `win-aarch64` | `maactl-<version>-win-aarch64.zip` | `windows-11-arm` |
+| `linux-x86_64` | `maactl-<version>-linux-x86_64.zip` | `ubuntu-24.04` |
+| `linux-aarch64` | `maactl-<version>-linux-aarch64.zip` | `ubuntu-24.04-arm` |
+| `macos-x86_64` | `maactl-<version>-macos-x86_64.zip` | `macos-15-intel` |
+| `macos-aarch64` | `maactl-<version>-macos-aarch64.zip` | `macos-15` |
+
+每个压缩包里都是同一份组合：`maactl`（自带 MaaFramework）与 `maactl-lite`（从 `./maafw/bin`
+或 `--lib-dir` 加载）。Windows 上文件名带 `.exe`。构建在原生 runner 上进行，因此运行库是真的被
+加载验证过的，而不是“交叉编译出个文件就算数”：`build_release.py` 会跑 `maactl selfcheck`，
+它会像普通命令一样加载 MaaFramework 并打印实际加载到的版本。Linux runner 因此先装上
+`libdbus-1-3` 与 `libatomic1`（MaaToolkit 与发布包内 libc++ 的系统依赖）。
+
+```bash
 # 发一个正式版
 git tag -a v0.1.2 -m "MaaCtl v0.1.2" && git push origin v0.1.2
 
 # 发一个预发布（npm 上打 beta 标签，不会动 latest）
 git tag -a v0.1.2-beta.1 -m "MaaCtl v0.1.2-beta.1" && git push origin v0.1.2-beta.1
 ```
+
+MaaFramework 的版本只钉在 `release.yml` 的 `MAAFW_VERSION` 环境变量里（六个平台共用）：升级时
+只改这一行，工作流会把它传给 `fetch_maafw.py`；项目代码与打包器都不感知版本，运行库版本由
+`maactl -v` / `maactl selfcheck` 从加载后的库里读出（`build_release.py` 就是用它验证产物的）。
 
 ## 发布到 npm
 
@@ -40,10 +63,12 @@ gh workflow run npm-publish.yml -f tag=v0.1.2 -f dry_run=true   # 只演练，�
 ```
 
 工作流流程：checkout 该 tag → `release.py metadata` 算出 version/channel → 确认 tag 里存在
-`npm/` → `gh release download` 取回 Release 中已由 `build` 验证过的 `maactl.exe` → `npm version`
-对齐包版本并校验 exe 的 `--version` 确实包含该版本号 → `npm test` → `node scripts/vendor-binary.js`
-把 exe 放进 `npm/vendor/` → 查询 npm 上是否已有该版本（有则跳过）→
-`npm publish --access public --provenance --tag <latest|alpha|beta|rc>`。
+`npm/` → `gh release download --pattern "maactl-*-win-x86_64.zip"` 取回 `build` 产出的 Windows
+压缩包并解出 `maactl.exe` → `npm version` 对齐包版本并校验 exe 的 `--version` 确实包含该版本号 →
+`npm test` → `node scripts/vendor-binary.js` 把 exe 放进 `npm/vendor/` → 查询 npm 上是否已有该版本
+（有则跳过）→ `npm publish --access public --provenance --tag <latest|alpha|beta|rc>`。
+
+npm 包只面向 Windows（`os: win32`），其余平台的分发就是上面那六个压缩包。
 
 ### 为什么不用 `on: release: published`
 

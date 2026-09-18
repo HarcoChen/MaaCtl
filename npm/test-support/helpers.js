@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const zlib = require('node:zlib');
 
 const PACKAGE_ROOT = path.resolve(__dirname, '..');
 
@@ -14,11 +15,16 @@ const ENV_KEYS = [
   'MAACTL_MIRROR',
   'MAACTL_REPO',
   'MAACTL_ASSET',
+  'MAACTL_PLATFORM',
   'MAACTL_SKIP_DOWNLOAD',
   'MAACTL_STRICT_INSTALL',
   'MAACTL_QUIET',
   'MAACTL_VERBOSE',
   'MAACTL_LANG',
+  // The wrapper falls back to these when MAACTL_LANG is unset.
+  'LC_ALL',
+  'LC_MESSAGES',
+  'LANG',
   'GH_TOKEN',
   'GITHUB_TOKEN',
   'LOCALAPPDATA',
@@ -77,11 +83,17 @@ async function withEnvAsync(values, body) {
  * by a `vendor/maactl.exe` sitting in the working copy (developers create one
  * with `npm run vendor:binary`), so they run against a copy that is guaranteed
  * to have no vendored executable. Each call returns a distinct module instance.
+ *
+ * `scripts` also copies the scripts/ directory, which is only needed by tests
+ * that run a script as a subprocess.
  */
-function isolatedPackage({ vendor } = {}) {
+function isolatedPackage({ vendor, scripts = false } = {}) {
   const root = tempDir('maactl-npm-pkg-');
   fs.cpSync(path.join(PACKAGE_ROOT, 'lib'), path.join(root, 'lib'), { recursive: true });
   fs.copyFileSync(path.join(PACKAGE_ROOT, 'package.json'), path.join(root, 'package.json'));
+  if (scripts) {
+    fs.cpSync(path.join(PACKAGE_ROOT, 'scripts'), path.join(root, 'scripts'), { recursive: true });
+  }
   if (vendor) {
     fs.mkdirSync(path.join(root, 'vendor'), { recursive: true });
     fs.writeFileSync(path.join(root, 'vendor', 'maactl.exe'), vendor);
@@ -111,4 +123,58 @@ async function withServer(routes, body) {
   }
 }
 
-module.exports = { PACKAGE_ROOT, ENV_KEYS, tempDir, withEnv, withEnvAsync, isolatedPackage, withServer };
+/**
+ * Build a zip archive in memory.
+ *
+ * Node can read zips but not write them, so the wrapper's tests build their own.
+ * `method` picks deflate (the default, as release archives use) or stored.
+ */
+function zipBuffer(files, { method = 'deflate' } = {}) {
+  const crc32 = zlib.crc32 || (() => 0);
+  const parts = [];
+  const central = [];
+  let offset = 0;
+  for (const [name, content] of Object.entries(files)) {
+    const nameBytes = Buffer.from(name, 'utf8');
+    const raw = Buffer.from(content);
+    const deflated = zlib.deflateRawSync(raw);
+    const stored = method === 'stored' || deflated.length >= raw.length;
+    const data = stored ? raw : deflated;
+    const checksum = crc32(raw) >>> 0;
+
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4); // version needed
+    local.writeUInt16LE(stored ? 0 : 8, 8); // compression method
+    local.writeUInt32LE(checksum, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(raw.length, 22);
+    local.writeUInt16LE(nameBytes.length, 26);
+    parts.push(local, nameBytes, data);
+
+    const header = Buffer.alloc(46);
+    header.writeUInt32LE(0x02014b50, 0);
+    header.writeUInt16LE(20, 4); // version made by
+    header.writeUInt16LE(20, 6); // version needed
+    header.writeUInt16LE(stored ? 0 : 8, 10);
+    header.writeUInt32LE(checksum, 16);
+    header.writeUInt32LE(data.length, 20);
+    header.writeUInt32LE(raw.length, 24);
+    header.writeUInt16LE(nameBytes.length, 28);
+    header.writeUInt32LE(offset, 42);
+    central.push(header, nameBytes);
+
+    offset += local.length + nameBytes.length + data.length;
+  }
+
+  const directory = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(Object.keys(files).length, 8);
+  end.writeUInt16LE(Object.keys(files).length, 10);
+  end.writeUInt32LE(directory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...parts, directory, end]);
+}
+
+module.exports = { PACKAGE_ROOT, ENV_KEYS, tempDir, withEnv, withEnvAsync, isolatedPackage, withServer, zipBuffer };

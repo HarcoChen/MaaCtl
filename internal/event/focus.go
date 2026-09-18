@@ -6,10 +6,51 @@ import (
 	"strings"
 )
 
-// RenderFocus returns the log message declared for an exact MaaFramework callback.
+// DisplayChannels lists the focus display channels the protocol defines.
+var DisplayChannels = []string{"log", "toast", "notification", "dialog", "modal"}
+
+// ParseDisplay parses --focus-display: a comma-separated channel list or "all".
+// An empty value keeps the default, which is "log" only.
+func ParseDisplay(value string) (map[string]bool, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.EqualFold(value, "log") {
+		return nil, nil
+	}
+	allowed := map[string]bool{}
+	if strings.EqualFold(value, "all") {
+		for _, channel := range DisplayChannels {
+			allowed[channel] = true
+		}
+		return allowed, nil
+	}
+	for _, part := range strings.Split(value, ",") {
+		channel := strings.ToLower(strings.TrimSpace(part))
+		if channel == "" {
+			continue
+		}
+		known := false
+		for _, candidate := range DisplayChannels {
+			if candidate == channel {
+				known = true
+				break
+			}
+		}
+		if !known {
+			return nil, fmt.Errorf("invalid --focus-display channel %q; use %s or all", channel, strings.Join(DisplayChannels, ","))
+		}
+		allowed[channel] = true
+	}
+	if len(allowed) == 0 {
+		return nil, nil
+	}
+	return allowed, nil
+}
+
+// RenderFocus returns the message declared for an exact MaaFramework callback.
 // A string focus is shorthand for {content: string, display: "log"}; an object
-// is emitted here only when its display includes the console's log channel.
-func RenderFocus(message string, detail any) string {
+// is emitted only when one of its display channels is allowed. A nil filter
+// means the CLI default, "log" only.
+func RenderFocus(message string, detail any, allowed map[string]bool) string {
 	values, ok := toObject(detail)
 	if !ok {
 		return ""
@@ -25,9 +66,12 @@ func RenderFocus(message string, detail any) string {
 	content := ""
 	switch v := template.(type) {
 	case string:
+		if !channelAllowed(allowed, "log") {
+			return ""
+		}
 		content = v
 	case map[string]any:
-		if !displaysLog(v["display"]) {
+		if !displayAllowed(v["display"], allowed) {
 			return ""
 		}
 		content, _ = v["content"].(string)
@@ -49,18 +93,31 @@ func toObject(value any) (map[string]any, bool) {
 	return nil, false
 }
 
-func displaysLog(value any) bool {
+// channelAllowed reports whether a display channel is enabled. A nil filter
+// means "log only", matching the CLI default.
+func channelAllowed(allowed map[string]bool, channel string) bool {
+	if allowed == nil {
+		return channel == "log"
+	}
+	return allowed[channel]
+}
+
+// displayAllowed reports whether any of a template's display channels is
+// enabled. A missing display means "log".
+func displayAllowed(value any, allowed map[string]bool) bool {
 	switch v := value.(type) {
 	case nil:
-		return true
+		return channelAllowed(allowed, "log")
 	case string:
-		return v == "log"
+		return channelAllowed(allowed, v)
 	case []any:
 		for _, item := range v {
-			if text, ok := item.(string); ok && text == "log" {
+			if text, ok := item.(string); ok && channelAllowed(allowed, text) {
 				return true
 			}
 		}
+		return false
+	default:
+		return false
 	}
-	return false
 }

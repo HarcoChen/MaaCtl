@@ -1,6 +1,6 @@
 'use strict';
 
-// Minimal HTTPS downloader for the maactl.exe release asset.
+// Minimal HTTPS downloader for the maactl release archive.
 //
 // Node built-ins only: the npm package ships no runtime dependencies. GitHub
 // release downloads answer with a 302 to objects.githubusercontent.com, so
@@ -10,6 +10,8 @@
 const fs = require('node:fs');
 const http = require('node:http');
 const https = require('node:https');
+
+const env = require('./env');
 
 const MAX_REDIRECTS = 5;
 const REQUEST_TIMEOUT_MS = 60_000;
@@ -25,7 +27,7 @@ function userAgent() {
 }
 
 function githubToken() {
-  return (process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '').trim();
+  return env.value('GH_TOKEN') || env.value('GITHUB_TOKEN');
 }
 
 function baseHeaders(url) {

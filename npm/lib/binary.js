@@ -7,8 +7,9 @@
 //   2. <package>/vendor/maactl.exe – the executable published inside the tarball;
 //   3. <cache>/npm/<version>/maactl.exe – a previous download, reused across runs.
 //
-// When none of them exists the exe is downloaded from the GitHub release that
-// matches the package version, verified, and cached for the next run.
+// When none of them exists the release archive of this platform is downloaded
+// from the GitHub release that matches the package version, maactl.exe is
+// unpacked out of it, and the result is verified and cached for the next run.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -19,6 +20,7 @@ const { downloadWithRetry, formatBytes, progressReporter } = require('./download
 const env = require('./env');
 const { MaactlError } = require('./errors');
 const messages = require('./messages');
+const zip = require('./zip');
 
 const PACKAGE_ROOT = path.resolve(__dirname, '..');
 const PACKAGE = require(path.join(PACKAGE_ROOT, 'package.json'));
@@ -29,7 +31,9 @@ const MIN_BINARY_BYTES = 1 << 20;
 
 const EXE_NAME = 'maactl.exe';
 const DEFAULT_REPO = 'TanyaShue/MaaCtl';
-const DEFAULT_ASSET = 'maactl.exe';
+// The wrapper is Windows-only (package.json restricts "os" to win32), so it
+// always takes the win-x86_64 archive of the release.
+const DEFAULT_PLATFORM = 'win-x86_64';
 
 function version() {
   return (env.value('MAACTL_VERSION') || PACKAGE.version).replace(/^v/, '');
@@ -43,8 +47,16 @@ function repo() {
   return env.value('MAACTL_REPO') || DEFAULT_REPO;
 }
 
+function platform() {
+  return env.value('MAACTL_PLATFORM') || DEFAULT_PLATFORM;
+}
+
+/**
+ * The release asset the executable comes in: one archive per platform, holding
+ * both the self-contained and the lite executable.
+ */
 function assetName() {
-  return env.value('MAACTL_ASSET') || DEFAULT_ASSET;
+  return env.value('MAACTL_ASSET') || `maactl-${version()}-${platform()}.zip`;
 }
 
 /** Cache root mirroring the CLI's own layout: %LOCALAPPDATA%\maactl on Windows. */
@@ -63,6 +75,14 @@ function home() {
 
 function cacheExePath(versionOverride) {
   return path.join(home(), 'npm', versionOverride || version(), EXE_NAME);
+}
+
+/**
+ * Where the release archive is unpacked. It sits next to the cached executable
+ * and is deleted as soon as the executable is written out.
+ */
+function archivePath(exePath = cacheExePath()) {
+  return path.join(path.dirname(exePath), assetName());
 }
 
 function bundledExePath() {
@@ -138,9 +158,36 @@ function verifyBinary(file, { spawn = spawnSync } = {}) {
 }
 
 /**
- * Download maactl.exe into the cache unless a local copy already exists.
- * `write(text)` receives human readable progress lines; pass `quiet` to
- * suppress them.
+ * Delete a temporary file without letting a cleanup failure reach the caller.
+ *
+ * Windows keeps a file locked while a virus scanner or the search indexer reads
+ * it, and an EPERM from `rmSync` inside a `finally` would replace whatever the
+ * try block decided, turning a successful first run into a failed one.
+ */
+function removeQuietly(file) {
+  try {
+    fs.rmSync(file, { force: true });
+  } catch {
+    // A file that stays behind only costs disk space and is rewritten next time.
+  }
+}
+
+/**
+ * Unpack maactl.exe out of the downloaded release archive and write it to dest.
+ */
+function writeExecutable(archive, dest) {
+  const data = fs.readFileSync(archive);
+  const payload = zip.extractEntry(data, EXE_NAME);
+  if (!payload) {
+    throw new Error(`${archive} holds no ${EXE_NAME} (contains: ${zip.entryNames(data).join(', ') || 'nothing'})`);
+  }
+  fs.writeFileSync(dest, payload);
+}
+
+/**
+ * Download the release archive and cache the executable inside it, unless a
+ * local copy already exists. `write(text)` receives human readable progress
+ * lines; pass `quiet` to suppress them.
  */
 async function ensureBinary({ write = () => {}, quiet = false, verify = verifyBinary } = {}) {
   const existing = resolveBinary();
@@ -149,6 +196,7 @@ async function ensureBinary({ write = () => {}, quiet = false, verify = verifyBi
   }
 
   const dest = cacheExePath();
+  const archive = archivePath(dest);
   try {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
   } catch (error) {
@@ -165,7 +213,7 @@ async function ensureBinary({ write = () => {}, quiet = false, verify = verifyBi
 
   const onProgress = showProgress ? progressReporter() : undefined;
   try {
-    await downloadWithRetry(url, dest, {
+    await downloadWithRetry(url, archive, {
       onProgress,
       onRetry: (attempt, attempts, error) => {
         if (!quiet) {
@@ -173,20 +221,30 @@ async function ensureBinary({ write = () => {}, quiet = false, verify = verifyBi
         }
       },
     });
-    if (onProgress) {
+  } catch (error) {
+    if (!quiet && onProgress) {
       process.stderr.write('\n');
     }
-    try {
-      verify(dest);
-    } catch (error) {
-      fs.rmSync(dest, { force: true });
-      throw error;
-    }
-  } catch (error) {
-    if (error instanceof MaactlError) {
-      throw error;
-    }
     throw new MaactlError(messages.text('downloadFailed', url, error.message), { cause: error });
+  }
+  if (onProgress) {
+    process.stderr.write('\n');
+  }
+
+  try {
+    writeExecutable(archive, dest);
+  } catch (error) {
+    throw new MaactlError(messages.text('extractFailed', archive, error.message), { cause: error });
+  } finally {
+    // The archive is only ever needed to produce the executable; keeping it
+    // would double the cache size for nothing.
+    removeQuietly(archive);
+  }
+  try {
+    verify(dest);
+  } catch (error) {
+    removeQuietly(dest);
+    throw error;
   }
 
   const size = formatBytes(fs.statSync(dest).size);
@@ -209,9 +267,11 @@ module.exports = {
   version,
   tag,
   repo,
+  platform,
   assetName,
   home,
   cacheExePath,
+  archivePath,
   bundledExePath,
   binaryUrl,
   resolveBinary,

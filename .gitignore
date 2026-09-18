@@ -11,7 +11,7 @@
 /internal/maafw/bundled/payload/*
 !/internal/maafw/bundled/payload/README.md
 
-# MaaFramework release archives downloaded by tools/packmaafw
+# MaaFramework release archives kept locally, unpacked into maafw/ by hand
 /assets/
 
 # npm wrapper

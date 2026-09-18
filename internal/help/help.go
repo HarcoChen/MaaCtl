@@ -1,11 +1,10 @@
-// Package help renders the compact maactl help layout: command descriptions,
-// grouped flags, and separately listed planned features.
+// Package help renders maactl's compact help layout: one-line summaries, short
+// aliases, flags grouped by purpose, and a single example block.
 package help
 
 import (
 	"fmt"
 	"io"
-	"regexp"
 	"strings"
 
 	"maactl/internal/i18n"
@@ -14,94 +13,140 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// Help renderer annotations. They let the renderer group planned features and
-// shared execution flags without parsing description text.
+// Help renderer annotations. They let the renderer group flags by purpose and
+// show the multi-letter aliases that pflag cannot carry as shorthands.
 const (
-	PlannedAnnotation = "maactl.planned"
+	// AliasAnnotation holds a short alias such as "if" for "--interface".
+	AliasAnnotation = "maactl.help.alias"
+	// SectionAnnotation holds the flag's group key.
 	SectionAnnotation = "maactl.help.section"
-
-	// SectionAction groups action-selecting flags such as interface --show.
-	SectionAction = "action"
-	// SectionExecution groups execution flags shared by run and its subcommands.
-	SectionExecution = "execution"
 )
 
-// SetFullHelp replaces cobra's default help with a compact layout:
-// command descriptions are always shown, flags are grouped by owner, and
-// planned features are listed separately.
-func SetFullHelp(root *cobra.Command) {
-	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
-		renderHelp(cmd, cmd.OutOrStdout())
-	})
+// Flag groups, in render order. An unannotated flag goes into sectionPlain.
+const (
+	sectionPlain     = ""
+	SectionShortcut  = "shortcut"
+	SectionTarget    = "target"
+	SectionOptions   = "options"
+	SectionResources = "resources"
+	SectionOutput    = "output"
+	SectionControl   = "control"
+)
+
+// sectionOrder is the order flag groups are printed in.
+var sectionOrder = []string{
+	sectionPlain,
+	SectionShortcut,
+	SectionTarget,
+	SectionOptions,
+	SectionResources,
+	SectionOutput,
+	SectionControl,
 }
 
-// MarkCommandPlanned flags a command as published but not implemented yet.
-func MarkCommandPlanned(cmd *cobra.Command) {
-	if cmd.Annotations == nil {
-		cmd.Annotations = map[string]string{}
-	}
-	cmd.Annotations[PlannedAnnotation] = "true"
-}
-
-// MarkFlagsPlanned flags flags as published but not implemented yet.
-func MarkFlagsPlanned(flags *pflag.FlagSet, names ...string) {
-	for _, name := range names {
-		_ = flags.SetAnnotation(name, PlannedAnnotation, []string{"true"})
+// sectionTitle returns the localized heading for a flag group.
+func sectionTitle(section string) string {
+	switch section {
+	case SectionShortcut:
+		return i18n.Text("Shortcuts:", "快捷方式：")
+	case SectionTarget:
+		return i18n.Text("Target:", "目标选择：")
+	case SectionOptions:
+		return i18n.Text("Options:", "配置项与覆盖：")
+	case SectionResources:
+		return i18n.Text("Resources:", "资源：")
+	case SectionOutput:
+		return i18n.Text("Output:", "输出：")
+	case SectionControl:
+		return i18n.Text("Control:", "运行控制：")
+	default:
+		return i18n.Text("Flags:", "选项：")
 	}
 }
 
 // MarkFlagsSection assigns flags to a help section.
 func MarkFlagsSection(flags *pflag.FlagSet, section string, names ...string) {
 	for _, name := range names {
-		_ = flags.SetAnnotation(name, SectionAnnotation, []string{section})
+		if flag := flags.Lookup(name); flag != nil {
+			_ = flags.SetAnnotation(name, SectionAnnotation, []string{section})
+		}
 	}
 }
 
-// CommandPlanned reports whether a command is marked as planned.
-func CommandPlanned(cmd *cobra.Command) bool {
-	return cmd.Annotations[PlannedAnnotation] == "true"
+// MarkFlagAlias records the multi-letter alias of a flag so help can print it.
+func MarkFlagAlias(flag *pflag.Flag, alias string) {
+	if flag == nil || alias == "" {
+		return
+	}
+	if flag.Annotations == nil {
+		flag.Annotations = map[string][]string{}
+	}
+	flag.Annotations[AliasAnnotation] = []string{alias}
+}
+
+// FlagAlias returns the multi-letter alias of a flag, or "".
+func FlagAlias(flag *pflag.Flag) string {
+	for _, value := range flag.Annotations[AliasAnnotation] {
+		return value
+	}
+	return ""
+}
+
+// SetFullHelp replaces cobra's default help with the compact layout.
+func SetFullHelp(root *cobra.Command) {
+	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
+		renderHelp(cmd, cmd.OutOrStdout())
+	})
 }
 
 func renderHelp(cmd *cobra.Command, out io.Writer) {
 	var b strings.Builder
-	writeDescription(&b, cmd)
+	writeTitle(&b, cmd)
 	writeUsage(&b, cmd)
 	writeCommands(&b, cmd)
 	writeFlags(&b, cmd)
-	writeExamples(&b, cmd)
+	writeExample(&b, cmd)
 	writeFooter(&b, cmd)
 	_, _ = io.WriteString(out, b.String())
 }
 
-func writeDescription(b *strings.Builder, cmd *cobra.Command) {
+// writeTitle prints "name (aliases): summary" followed by the long description
+// only when it adds something the summary does not.
+func writeTitle(b *strings.Builder, cmd *cobra.Command) {
+	label := cmd.Name()
+	if len(cmd.Aliases) > 0 {
+		label += " (" + strings.Join(cmd.Aliases, ", ") + ")"
+	}
 	short := strings.TrimSpace(cmd.Short)
 	long := strings.TrimSpace(cmd.Long)
-	switch {
-	case short == "" && long == "":
+	if short == "" && long == "" {
 		return
-	case short == "":
-		b.WriteString(long + "\n")
-	case long == "" || long == short:
-		b.WriteString(short + "\n")
-	default:
-		b.WriteString(short + "\n\n" + long + "\n")
+	}
+	if short == "" {
+		fmt.Fprintf(b, "%s: %s\n", label, long)
+		return
+	}
+	fmt.Fprintf(b, "%s: %s\n", label, short)
+	if long != "" && long != short {
+		b.WriteString("\n")
+		b.WriteString(long)
+		b.WriteString("\n")
 	}
 }
 
 func writeUsage(b *strings.Builder, cmd *cobra.Command) {
 	writeHeading(b, i18n.Text("Usage:", "用法："))
 	if cmd == cmd.Root() {
-		fmt.Fprintf(b, "  %s [command]\n", cmd.CommandPath())
+		fmt.Fprintf(b, "  %s <command> [flags]\n", cmd.CommandPath())
 		return
 	}
 	fmt.Fprintf(b, "  %s\n", cmd.UseLine())
 	if cmd.HasAvailableSubCommands() {
-		fmt.Fprintf(b, "  %s [command]\n", cmd.CommandPath())
+		fmt.Fprintf(b, "  %s <command> [flags]\n", cmd.CommandPath())
 	}
 }
 
-// writeCommands lists available child commands one level deep. Deeper commands
-// are only shown when their parent help is requested.
+// writeCommands lists the child commands with their aliases, one level deep.
 func writeCommands(b *strings.Builder, cmd *cobra.Command) {
 	var children []*cobra.Command
 	for _, child := range cmd.Commands() {
@@ -112,164 +157,152 @@ func writeCommands(b *strings.Builder, cmd *cobra.Command) {
 	if len(children) == 0 {
 		return
 	}
-	names := make([]string, len(children))
+	labels := make([]string, len(children))
 	descriptions := make([]string, len(children))
 	width := 0
 	for i, child := range children {
-		names[i] = commandDisplayName(child)
+		labels[i] = commandLabel(child)
 		descriptions[i] = child.Short
-		if CommandPlanned(child) {
-			descriptions[i] = strings.TrimSpace(descriptions[i] + i18n.Text(" (planned)", "（计划中）"))
-		}
-		if len(names[i]) > width {
-			width = len(names[i])
+		if len(labels[i]) > width {
+			width = len(labels[i])
 		}
 	}
 	writeHeading(b, i18n.Text("Commands:", "命令："))
 	for i := range children {
-		fmt.Fprintf(b, "  %-*s   %s\n", width, names[i], descriptions[i])
+		fmt.Fprintf(b, "  %-*s  %s\n", width, labels[i], descriptions[i])
 	}
 }
 
-func commandDisplayName(cmd *cobra.Command) string {
-	name := cmd.Name()
-	rest := strings.TrimSpace(strings.TrimPrefix(cmd.Use, name))
-	if rest != "" {
-		return name + " " + rest
+// commandLabel formats "name, alias <argument>" for the command list.
+func commandLabel(cmd *cobra.Command) string {
+	label := cmd.Name()
+	if len(cmd.Aliases) > 0 {
+		label += ", " + strings.Join(cmd.Aliases, ", ")
 	}
-	return name
+	if rest := strings.TrimSpace(strings.TrimPrefix(cmd.Use, cmd.Name())); rest != "" {
+		label += " " + rest
+	}
+	return label
 }
 
-// writeFlags renders flag sections in a stable order: command flags, shared
-// execution flags (once), inherited flags with their source, planned flags,
-// then root-level global flags.
+// writeFlags groups every flag this command accepts by purpose, then prints the
+// global flags. Shared flags therefore look the same in a group's help and in a
+// subcommand's help.
 func writeFlags(b *strings.Builder, cmd *cobra.Command) {
-	root := cmd.Root()
-	var ownFlags, ownActions, ownExecution, planned, global []*pflag.Flag
-	inherited := map[*cobra.Command][]*pflag.Flag{}
-	var inheritedOrder []*cobra.Command
+	groups := map[string][]*pflag.Flag{}
 	seen := map[*pflag.Flag]bool{}
-
-	add := func(f *pflag.Flag, isOwn bool) {
-		if f.Name == "help" || seen[f] {
-			return
-		}
-		seen[f] = true
-		switch {
-		case isGlobalFlag(cmd, root, f):
-			global = append(global, f)
-		case flagPlanned(f):
-			planned = append(planned, f)
-		case isOwn:
-			switch flagSection(f) {
-			case SectionAction:
-				ownActions = append(ownActions, f)
-			case SectionExecution:
-				ownExecution = append(ownExecution, f)
-			default:
-				ownFlags = append(ownFlags, f)
+	var global []*pflag.Flag
+	collect := func(flags *pflag.FlagSet) {
+		flags.VisitAll(func(f *pflag.Flag) {
+			if f.Name == "help" || seen[f] {
+				return
 			}
-		default:
-			owner := flagOwner(cmd, f)
-			if _, ok := inherited[owner]; !ok {
-				inheritedOrder = append(inheritedOrder, owner)
+			seen[f] = true
+			if isGlobalFlag(cmd, f) {
+				global = append(global, f)
+				return
 			}
-			inherited[owner] = append(inherited[owner], f)
-		}
+			section := flagSection(f)
+			groups[section] = append(groups[section], f)
+		})
 	}
-	cmd.NonInheritedFlags().VisitAll(func(f *pflag.Flag) { add(f, true) })
-	cmd.InheritedFlags().VisitAll(func(f *pflag.Flag) { add(f, false) })
+	collect(cmd.NonInheritedFlags())
+	collect(cmd.InheritedFlags())
 
-	writeFlagGroup(b, i18n.Text("Flags:", "选项："), ownFlags)
-	writeFlagGroup(b, i18n.Text("Actions:", "操作："), ownActions)
-	writeFlagGroup(b, i18n.Text("Execution Flags (shared with subcommands):", "执行选项（与子命令共用）："), ownExecution)
-	for _, owner := range inheritedOrder {
-		var flags, execution []*pflag.Flag
-		for _, f := range inherited[owner] {
-			if flagSection(f) == SectionExecution {
-				execution = append(execution, f)
-			} else {
-				flags = append(flags, f)
-			}
-		}
-		writeFlagGroup(b, fmt.Sprintf(i18n.Text("Inherited Flags (from %q):", "继承选项（来自 %q）："), owner.CommandPath()), flags)
-		writeFlagGroup(b, fmt.Sprintf(i18n.Text("Execution Flags (inherited from %q):", "执行选项（继承自 %q）："), owner.CommandPath()), execution)
+	for _, section := range sectionOrder {
+		writeFlagGroup(b, sectionTitle(section), groups[section])
 	}
-	writeFlagGroup(b, i18n.Text("Planned Flags:", "计划中的选项："), planned)
-	writeFlagGroup(b, i18n.Text("Global Flags:", "全局选项："), append(global, syntheticHelpFlag()))
+	global = append(global, syntheticHelpFlag())
+	writeFlagGroup(b, i18n.Text("Global:", "全局选项："), global)
 }
 
-func isGlobalFlag(cmd, root *cobra.Command, f *pflag.Flag) bool {
+func isGlobalFlag(cmd *cobra.Command, f *pflag.Flag) bool {
+	root := cmd.Root()
 	if root.PersistentFlags().Lookup(f.Name) == f {
 		return true
 	}
 	return cmd == root && root.Flags().Lookup(f.Name) == f
 }
 
-func flagOwner(cmd *cobra.Command, f *pflag.Flag) *cobra.Command {
-	for c := cmd.Parent(); c != nil; c = c.Parent() {
-		if c.PersistentFlags().Lookup(f.Name) == f {
-			return c
-		}
-	}
-	return cmd.Root()
-}
-
-func flagPlanned(f *pflag.Flag) bool {
-	for _, value := range f.Annotations[PlannedAnnotation] {
-		if value == "true" {
-			return true
-		}
-	}
-	return false
-}
-
 func flagSection(f *pflag.Flag) string {
 	for _, value := range f.Annotations[SectionAnnotation] {
 		return value
 	}
-	return ""
+	return sectionPlain
 }
 
+// writeFlagGroup prints a flag group with a fixed label column.
+func writeFlagGroup(b *strings.Builder, title string, flags []*pflag.Flag) {
+	if len(flags) == 0 {
+		return
+	}
+	labels := make([]string, len(flags))
+	usages := make([]string, len(flags))
+	width := 0
+	for i, f := range flags {
+		labels[i] = flagLabel(f)
+		usages[i] = flagUsage(f)
+		if len(labels[i]) > width {
+			width = len(labels[i])
+		}
+	}
+	writeHeading(b, title)
+	for i := range flags {
+		fmt.Fprintf(b, "  %-*s  %s\n", width, labels[i], usages[i])
+	}
+}
+
+// flagLabel renders "-s, -alias, --long <type>".
+func flagLabel(f *pflag.Flag) string {
+	var names []string
+	if f.Shorthand != "" {
+		names = append(names, "-"+f.Shorthand)
+	}
+	if alias := FlagAlias(f); alias != "" {
+		names = append(names, "-"+alias)
+	}
+	names = append(names, "--"+f.Name)
+	label := strings.Join(names, ", ")
+	if f.NoOptDefVal == "" {
+		label += " <" + f.Value.Type() + ">"
+	}
+	return label
+}
+
+// flagUsage renders the description plus the default when it is meaningful.
+func flagUsage(f *pflag.Flag) string {
+	return f.Usage + defaultSuffix(f)
+}
+
+// defaultSuffix omits zero defaults so the help stays short, and quotes string
+// defaults the way pflag does.
+func defaultSuffix(f *pflag.Flag) string {
+	def := f.DefValue
+	switch def {
+	case "", "false", "0", "0s", "0.00", "[]", "[]string{}":
+		return ""
+	}
+	if f.Value.Type() == "string" {
+		def = `"` + def + `"`
+	}
+	return i18n.Text(" (default "+def+")", "（默认 "+def+"）")
+}
+
+// syntheticHelpFlag builds the -h/--help entry this renderer prints. Cobra
+// installs a help flag of its own, but its description is an untranslated
+// "help for <command>", which would put an English fragment on every localized
+// page, so the page always renders this localized flag instead.
 func syntheticHelpFlag() *pflag.Flag {
 	flags := pflag.NewFlagSet("help", pflag.ContinueOnError)
 	flags.BoolP("help", "h", false, i18n.Text("show help", "显示帮助"))
 	return flags.Lookup("help")
 }
 
-// defaultSuffixPattern matches pflag's line-ending "(default ...)" annotation.
-var defaultSuffixPattern = regexp.MustCompile(` \(default (.*)\)$`)
-
-// localizeFlagUsages translates pflag's generated default annotations so
-// Chinese help does not mix in English "(default ...)" suffixes.
-func localizeFlagUsages(usages string) string {
-	if i18n.Active() != i18n.ZH {
-		return usages
-	}
-	lines := strings.Split(usages, "\n")
-	for i, line := range lines {
-		lines[i] = defaultSuffixPattern.ReplaceAllString(line, "（默认 $1）")
-	}
-	return strings.Join(lines, "\n")
-}
-
-func writeFlagGroup(b *strings.Builder, title string, flags []*pflag.Flag) {
-	if len(flags) == 0 {
-		return
-	}
-	set := pflag.NewFlagSet(title, pflag.ContinueOnError)
-	for _, f := range flags {
-		set.AddFlag(f)
-	}
-	writeHeading(b, title)
-	b.WriteString(localizeFlagUsages(set.FlagUsages()))
-}
-
-func writeExamples(b *strings.Builder, cmd *cobra.Command) {
+func writeExample(b *strings.Builder, cmd *cobra.Command) {
 	if strings.TrimSpace(cmd.Example) == "" {
 		return
 	}
-	writeHeading(b, i18n.Text("Examples:", "示例："))
+	writeHeading(b, i18n.Text("Example:", "示例："))
 	for _, line := range strings.Split(cmd.Example, "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			fmt.Fprintf(b, "  %s\n", line)
@@ -281,12 +314,12 @@ func writeFooter(b *strings.Builder, cmd *cobra.Command) {
 	if !cmd.HasAvailableSubCommands() {
 		return
 	}
-	target := "maactl <command> --help"
-	if cmd != cmd.Root() {
-		target = cmd.CommandPath() + " <command> --help"
-	}
 	b.WriteString("\n")
-	fmt.Fprintf(b, i18n.Text("Use %q for more information about a command.\n", "使用 %q 查看某个命令的更多信息。\n"), target)
+	if cmd == cmd.Root() {
+		fmt.Fprintln(b, i18n.Text(`Use "maactl <command> -h" for command details.`, `使用 "maactl <command> -h" 查看命令细节。`))
+		return
+	}
+	fmt.Fprintf(b, i18n.Text("Use %q for command details.\n", "使用 %q 查看命令细节。\n"), cmd.CommandPath()+" <command> -h")
 }
 
 func writeHeading(b *strings.Builder, title string) {

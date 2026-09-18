@@ -1,6 +1,9 @@
 package tests
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -171,6 +174,57 @@ func TestLoadAgentForms(t *testing.T) {
 				t.Errorf("identifier = %q, want %q", project.Agent[0].Identifier, tc.identifier)
 			}
 		})
+	}
+}
+
+// TestStripJSONCStripsBOM verifies a UTF-8 BOM (written by PowerShell 5.1 and
+// Notepad) does not break JSON parsing.
+func TestStripJSONCStripsBOM(t *testing.T) {
+	in := append([]byte("\xEF\xBB\xBF"), []byte(`{"interface_version": 2}`)...)
+	var value map[string]any
+	if err := json.Unmarshal(pi.StripJSONC(in), &value); err != nil {
+		t.Fatalf("BOM-prefixed JSON: %v", err)
+	}
+	if value["interface_version"] != float64(2) {
+		t.Errorf("decoded = %#v", value)
+	}
+}
+
+// TestStripJSONCPreservesBlockCommentLines verifies a multi-line block comment
+// keeps one newline per comment line so later JSON error line numbers do not
+// shift upwards.
+func TestStripJSONCPreservesBlockCommentLines(t *testing.T) {
+	in := []byte("{\n/* line 2\nline 3 */\n\"a\": }\n")
+	out := pi.StripJSONC(in)
+	if got, want := bytes.Count(out, []byte("\n")), bytes.Count(in, []byte("\n")); got != want {
+		t.Fatalf("newlines = %d, want %d:\n%s", got, want, out)
+	}
+	var value any
+	err := json.Unmarshal(out, &value)
+	if err == nil {
+		t.Fatal("expected a JSON error")
+	}
+	var syntax *json.SyntaxError
+	if errors.As(err, &syntax) {
+		line := 1 + bytes.Count(out[:syntax.Offset-1], []byte("\n"))
+		if line != 4 {
+			t.Errorf("error reported on line %d, want 4: %v", line, err)
+		}
+	}
+}
+
+// TestStripJSONCKeepsUnterminatedBlockComment verifies a block comment with no
+// closing */ is returned untouched instead of silently swallowing the rest of
+// the document.
+func TestStripJSONCKeepsUnterminatedBlockComment(t *testing.T) {
+	in := []byte(`{"a": 1, /* never closed`)
+	out := pi.StripJSONC(in)
+	if !bytes.Equal(out, in) {
+		t.Fatalf("unterminated comment should pass through unchanged:\n%s", out)
+	}
+	var value any
+	if err := json.Unmarshal(out, &value); err == nil {
+		t.Error("an unterminated block comment must still fail JSON parsing")
 	}
 }
 

@@ -1,6 +1,16 @@
 # MaaCtl Help 优化方案
 
-> 状态：**已实现**（P0/P1 已落地，实施说明与偏差见 §10；P2 未做）。
+> 状态：**设计目标已被第二版命令面取代，仅作历史记录保留**。本文记录的是第一版
+> （`interface --show`、`adb devices` 等）帮助文本的审计与优化；那些命令已经在
+> [pi-cli-design.md](pi-cli-design.md) 的重写中被替换。
+>
+> 下文 §3「目标帮助形态」是当时的设想，其中若干项在实现时被改掉或从未落地
+> （planned 分区、注解驱动、`--version` 去掉 `-v` 等），与现状的逐条差异见 §10。
+>
+> 现行帮助形态（`help.go`）：选项按用途分为 Shortcut / Target / Options / Resources /
+> Output / Control 六段，加末尾的 Global（标题见 `sectionTitle`）；继承的执行旗标按用途
+> 并入同名分段、不再单独标注来源；每个共享选项只打印一次；具体命令面见 [cli.md](cli.md)。
+>
 > 对象：`help.go`、各 `newXxxCommand` 的 `Short/Long/Example`、`docs/cli.md` 帮助章节。
 
 ## 1. 现状与证据
@@ -76,7 +86,7 @@ Commands:
 
 Global Flags:
   -f, --interface string   ProjectInterface file or project directory (default: ./interface.json)
-  -l, --lib-dir string     MaaFramework DLL directory (default: ./maafw/bin)
+  -l, --lib-dir string     MaaFramework library directory (default: ./maafw/bin)
   -j, --json               emit JSON on stdout; run also switches sink events to JSON
   -h, --help               help for maactl
       --version            print version information
@@ -225,7 +235,7 @@ Examples:
 | 位置 | 现状 | 建议 |
 | --- | --- | --- |
 | 全局 `--interface` | `ProjectInterface file or directory (default: ./interface.json)` | `ProjectInterface file or project directory (default: ./interface.json in the current directory)` |
-| 全局 `--lib-dir` | `MaaFramework DLL directory (default: ./maafw/bin)` | `MaaFramework runtime directory containing MaaFramework.dll and MaaToolkit.dll (default: ./maafw/bin)` |
+| 全局 `--lib-dir` | `MaaFramework library directory (default: ./maafw/bin)` | `MaaFramework library directory (default: ./maafw/bin)` |
 | 全局 `--json` | `output JSON` | `emit JSON on stdout; run also switches sink events to JSON` |
 | `run --events` | `sink output: focus (default), all, or off` | `event output: focus (PI focus text only), all (all sink events), off (default "focus")` |
 | `run --stop-after` | `stop a running task after this duration (for bounded runs/tests)` | `stop the task after this duration; use for bounded runs and tests (e.g. 30s)` |
@@ -270,19 +280,24 @@ Examples:
 - 不引入多语言帮助（表格中的中英文列名维持现状）。
 - 不改动事件输出格式与运行逻辑。
 
-## 10. 实施结果（已落地）
+## 10. 实施结果（与现状对照）
 
-已完成：
+已落地（与本文设计一致的部分）：
 
-- `help.go` 按本文 §4.1 重写：描述、单层命令列表、旗标分区、owner 来源标注、planned 分区、Examples、footer；删除 `sameHelpFlag` 属性比对。
-- `run` 共享执行旗标只注册一次在 `run.PersistentFlags()`（方案 A），`run task`/`run node` 显示 `Execution Flags (inherited from "maactl run")`；`-t/-n` 仍为 `run` 局部。
-- planned 已改为注解驱动：命令在列表中以 `(planned)` 标注，参数归入 `Planned Flags`；`Short` 不再含后缀。
-- 删除 `adb devices` 重复的 `-j/--json`，统一使用全局旗标；`--version` 去掉 `-v` 短参。
-- `interface` 动作用例归入 `Actions:`；`resource` 的 `-r` 在子命令中显示为 `Inherited Flags (from "maactl resource")`。
-- 测试：更新 `interface_test.go`；新增 `help_test.go`（根概览、共享旗标去重、planned 分区、继承来源、`help` 与 `-h` 一致性、`--version`、旗标在子命令前后解析）。
-- 帮助双语：新增 `lang.go` / `lang_windows.go` / `lang_other.go`；Windows 取用户默认 UI 语言，POSIX 读取 `LC_ALL`/`LC_MESSAGES`/`LANG`，中文显示中文、其余显示英文，可用 `MAACTL_LANG=zh_CN|en` 覆盖；全部命令描述、旗标文案、帮助分区标题与 pflag 的 `(default ...)` 注解均已本地化。
+- `help.go` 按本文 §4.1 重写为渲染器：描述、单层命令列表、按用途分段的旗标、Examples、footer；删除 `sameHelpFlag` 属性比对。
+- `run` 共享执行旗标只注册一次在 `run.PersistentFlags()`（方案 A），`run task`/`run node` 通过父命令读取；`-t/-n` 仍为 `run` 局部。
+- 删除第一版 `adb devices` 重复的 `-j/--json`，统一使用全局旗标。
+- 测试：新增 `help_test.go`（根概览、共享旗标去重、`help` 与 `-h` 一致性、`--version`、旗标在子命令前后解析等）。
+- 帮助双语：`internal/i18n/` 的 `i18n.go` / `detect_windows.go` / `detect_other.go`；Windows 取用户默认 UI 语言，POSIX 读取 `LC_ALL`/`LC_MESSAGES`/`LANG`，中文显示中文、其余显示英文，可用 `MAACTL_LANG=zh_CN|en` 覆盖；全部命令描述、旗标文案、帮助分区标题与 pflag 的 `(default ...)` 注解均已本地化。
 
-与设计稿的偏差：
+与设计稿不同 / 未实现（第二版改掉或从未落地）：
 
-- interface 的 planned 动作集中在 `Planned Flags`，未单独命名为 `Planned Actions`。
+- 分段名不同：现状是 Shortcut/Target/Options/Resources/Output/Control 加末尾 Global（`help.go` 的 `sectionOrder`），不是本文 §3 写的「选项 / 执行选项 / 继承选项 / 全局选项」。
+- 继承的执行旗标按用途并入同名分段，**不**打印 `Execution Flags (inherited from "maactl run")`；`help_test.go` 反而断言 `-a, --adb-address` 只出现一次。
+- planned 分区与 `Annotations{"planned":"true"}` 注解驱动从未实现：第二版直接移除了所有 planned 项，`help_test.go` 的 `TestNoPlannedFeaturesRemain` 断言帮助里不再出现 `(planned)`。
+- `--version` 保留了 `-v` 短参（`root.go` 的 `BoolP("version", "v", …)`），`help_test.go` 断言 `-v` 等价 `--version`。
+- `interface` 动作已被第二版改为 `pi` 子命令，不再有 `Actions:` / `Planned Actions:` 分段（`resource` 的 `-r` 也不再标注 `Inherited Flags` 来源）。
+
+与设计稿的残留偏差：
+
 - P2 未做：窄终端换行、未知旗标后的 `--help` 提示、按命令隐藏无关全局旗标。

@@ -41,7 +41,8 @@ jobs:
         working-directory: npm
         env:
           # The lite build loads MaaFramework from ./maafw/bin, which this job
-          # never downloads; --version and --help do not need the DLLs.
+          # never downloads; -v and --help answer without it (the version line
+          # simply leaves out the runtime part).
           MAACTL_SKIP_DOWNLOAD: "1"
         run: |
           npm pack --dry-run

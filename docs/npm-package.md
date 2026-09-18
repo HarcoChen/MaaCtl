@@ -6,7 +6,7 @@
 
 ```powershell
 npx maactl -v
-npx maactl interface --tasks -f D:\01_Projects\github\MaaMio
+npx maactl pi t -if D:\01_Projects\github\MaaMio
 
 npm install -g maactl
 maactl -v
@@ -14,8 +14,8 @@ maactl -v
 
 约束：
 
-1. **参数必须原样透传。** `npx maactl run task "自动挂机卖蛋" -f D:\proj --stop-after 10s` 与
-   `.\maactl.exe run task "自动挂机卖蛋" -f D:\proj --stop-after 10s` 完全等价，包括中文参数、
+1. **参数必须原样透传。** `npx maactl run -t "签到" -if D:\proj -sa 30s` 与
+   `.\maactl.exe run -t "签到" -if D:\proj -sa 30s` 完全等价，包括中文参数、
    含空格的路径和 `-`/`--` 前缀的选项。
 2. **工作目录不变。** 包装器不改 `cwd`，因此 `maactl` 默认从**调用者所在目录**读取
    `./interface.json`，与直接运行 exe 一致。
@@ -30,8 +30,9 @@ npm/
   package.json            bin/maactl、files、postinstall、os: win32
   README.md               发布到 npm 的说明（npx 用法、环境变量）
   bin/maactl.js           入口：npm 在 Windows 上生成的 maactl.cmd 指向它
-  lib/binary.js           maactl.exe 的定位、下载、校验与缓存
+  lib/binary.js           maactl.exe 的定位、下载、解包、校验与缓存
   lib/download.js         HTTPS 下载（重定向、重试、进度、截断检测）
+  lib/zip.js              最小 ZIP 读取（只用 zlib 解出压缩包里的 exe）
   lib/cli.js              解析 exe、spawn、转发参数与信号、返回退出码
   lib/env.js              环境变量读取（MAACTL_QUIET 等 1/true/yes/on 开关）
   lib/messages.js         中英文提示（跟随 MAACTL_LANG）
@@ -51,11 +52,14 @@ npm/
 1. `MAACTL_BINARY` 指定的路径（不存在则直接报错，不回退，避免静默用错版本）；
 2. 包内 `vendor/maactl.exe`（正式 tarball 携带，等于「开箱即用」）；
 3. `%LOCALAPPDATA%\maactl\npm\<version>\maactl.exe`（上一次安装/运行的下载缓存）；
-4. 下载 `https://github.com/<repo>/releases/download/v<version>/maactl.exe`。
+4. 下载 `https://github.com/<repo>/releases/download/v<version>/maactl-<version>-win-x86_64.zip`，
+   用 `lib/zip.js`（Node 无内置 zip API，只依赖 `zlib`）解出其中的 `maactl.exe`。
 
 缓存目录带版本号，升级包版本不会复用旧 exe；`MAACTL_VERSION` 可以同时改写下载版本和缓存目录，
-方便用未发布的版本自测。下载完成后校验 PE 头（`MZ`）、体积下限，并实际执行 `--version`
-确认输出里含 `maactl`；任一环节失败即删除文件，绝不缓存半成品。
+方便用未发布的版本自测。解压只取 `maactl.exe` 一个成员，并校验长度与 CRC32（CRC 校验依赖
+Node 22.2.0 才引入的 `zlib.crc32`，包内 `engines.node` 因此要求 `>=22.2.0`）；解压完成后立即
+删除压缩包（否则缓存里会白白多出一份）。随后校验 PE 头（`MZ`）、体积下限，并实际执行
+`--version` 确认输出里含 `maactl`；任一环节失败即删除文件，绝不缓存半成品。
 
 ## 参数与退出码转发
 
@@ -102,7 +106,8 @@ gh workflow run npm-publish.yml -f tag=v0.1.1 -f dry_run=true   # 只演练，�
 
 1. `actions/checkout` 到该 tag（`fetch-depth: 0`，`release.py` 需要本地 tag 列表）；
 2. `python .github/scripts/release.py metadata --tag <tag>` 得到 version / channel / prerelease；
-3. `gh release download <tag> --pattern maactl.exe`：直接复用 Release 里那个已在 `build` 中验证过的 exe；
+3. `gh release download <tag> --pattern "maactl-*-win-x86_64.zip"`：取回 `build` 产出的
+   Windows 压缩包并解出 `maactl.exe`（该 exe 已在 `build` 中验证过）；
 4. `npm version <version> --no-git-tag-version --allow-same-version` 把包版本对齐 tag，并校验
    `maactl.exe --version` 的输出里确实含有该版本号（防止发错 exe）；
 5. `npm test` 跑包装器测试；
@@ -151,7 +156,7 @@ cd npm
 npm test                                    # 单元测试，离线可跑
 npm run vendor:binary -- ..\maactl.exe      # 把本地构建的 exe 放进 vendor/
 npx --yes --package . maactl -v
-node bin\maactl.js interface --tasks -f D:\01_Projects\github\MaaMio
+node bin\maactl.js pi t -if D:\01_Projects\github\MaaMio
 ```
 
 只想验证参数转发而不重新打包时，用 `MAACTL_BINARY` 直接指向本地构建：

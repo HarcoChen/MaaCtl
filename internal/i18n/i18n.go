@@ -32,6 +32,15 @@ func Active() Language {
 	return systemLanguage()
 }
 
+// Code returns the active language as a PI-style code ("zh_cn" / "en_us"), so
+// help text and PI labels default to the same language.
+func Code() string {
+	if Active() == ZH {
+		return "zh_cn"
+	}
+	return "en_us"
+}
+
 // systemLanguage caches the system language; it never changes during a run.
 var systemLanguage = sync.OnceValue(detectSystemLanguage)
 

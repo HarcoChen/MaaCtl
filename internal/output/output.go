@@ -4,7 +4,6 @@ package output
 import (
 	"encoding/json"
 	"io"
-	"os"
 	"strings"
 )
 
@@ -21,9 +20,4 @@ func JSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
-}
-
-// Stdout writes v to standard output as indented JSON.
-func Stdout(v any) error {
-	return JSON(os.Stdout, v)
 }
