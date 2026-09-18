@@ -118,12 +118,15 @@ go build -o maactl-lite ./cmd/maactl             # 不携带运行库，约 5 Mi
 摘要跟着变，旧缓存不会被复用——项目里没有需要手动维护的版本号。
 
 升级 MaaFramework 只改一处：release 工作流里的 `MAAFW_VERSION`。项目代码不持有任何 MaaFramework
-版本：`--version` 只报告 maactl 自己的版本，MaaFramework 的版本由加载后的运行库通过它导出的
-接口自己报告：
+版本字符串：版本行 `maactl version <自身版本> (MaaFramework <运行库版本>)` 里的框架版本，由加载后的
+运行库通过它导出的接口报告，所以 `-v` 会真的加载一次运行库（自带构建首次运行会把 payload 解包到
+缓存目录）。没有可用运行库时（例如轻量版旁边没有 `./maafw/bin`）只打印 maactl 自己的版本并正常退出，
+加 `-vb` 会说明原因；`selfcheck` 是把这类问题当作失败来报告的命令：
 
 ```bash
-./maactl --version              # maactl version 0.1.1
-./maactl-lite --version         # maactl version 0.1.1
+./maactl --version              # maactl version 0.1.1 (MaaFramework v5.13.1)
+./maactl-lite --version         # maactl version 0.1.1 (MaaFramework v5.13.1)，从 ./maafw/bin 加载
+./maactl -v -l /other/maa/bin   # maactl version 0.1.1 (MaaFramework v5.13.1)，--lib-dir 生效
 ./maactl selfcheck              # MaaFramework v5.13.1 (linux-x86_64, bundled) from ...
 ./maactl-lite selfcheck         # MaaFramework v5.13.1 (linux-x86_64, local) from ./maafw/bin
 ```
@@ -139,8 +142,8 @@ maactl 自己的版本号由链接期注入，正式发布由 CI 用 tag 填入�
 go run ./tools/packmaafw
 go build -tags bundled -ldflags "-X main.version=1.2.3-beta.1" -o maactl ./cmd/maactl
 go build -ldflags "-X main.version=1.2.3-beta.1" -o maactl-lite ./cmd/maactl
-./maactl --version             # maactl version 1.2.3-beta.1
-./maactl-lite --version        # maactl version 1.2.3-beta.1
+./maactl --version             # maactl version 1.2.3-beta.1 (MaaFramework v5.13.1)
+./maactl-lite --version        # maactl version 1.2.3-beta.1 (MaaFramework v5.13.1)
 ./maactl selfcheck             # MaaFramework v5.13.1 (linux-x86_64, bundled) from ...
 ```
 

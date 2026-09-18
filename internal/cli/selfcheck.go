@@ -9,7 +9,6 @@ import (
 	"maactl/internal/maafw"
 	"maactl/internal/platform"
 
-	maa "github.com/MaaXYZ/maa-framework-go/v4"
 	"github.com/spf13/cobra"
 )
 
@@ -29,16 +28,12 @@ exit code when the libraries cannot be loaded at all.`, `按其它命令相同�
 最后是 ./maafw/bin。打印实际加载到的版本；无法加载时以非零退出码失败。`),
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			libDir, err := maafw.ResolveLibDir(global.LibDir)
+			version, libDir, err := maafw.RuntimeVersion(global.LibDir, global.LogDir)
 			if err != nil {
 				return withExitCode(ExitInternal, err)
 			}
-			if err := maafw.Init(libDir, global.LogDir); err != nil {
-				return withExitCode(ExitInternal, fmt.Errorf("initialize MaaFramework from %s: %w", libDir, err))
-			}
-			defer func() { _ = maa.Release() }()
 			fmt.Fprintf(cmd.OutOrStdout(), "MaaFramework %s (%s, %s) from %s\n",
-				maafw.Version(), platform.Host().ID(), librarySource(global.LibDir, libDir), filepath.Clean(libDir))
+				version, platform.Host().ID(), librarySource(global.LibDir, libDir), filepath.Clean(libDir))
 			return nil
 		},
 	}

@@ -49,6 +49,31 @@ func Version() string {
 	return maa.Version()
 }
 
+// RuntimeVersion resolves the runtime this build would load, initializes it, and
+// returns the version the libraries report about themselves together with the
+// directory they were loaded from.
+//
+// This is the only way maactl ever learns a MaaFramework version: the project
+// keeps none of its own, the libraries answer through their exported API. It
+// needs no project, device, or task, so `--version` and `selfcheck` both use it.
+func RuntimeVersion(libDir, logDir string) (string, string, error) {
+	resolved, err := ResolveLibDir(libDir)
+	if err != nil {
+		return "", "", err
+	}
+	if err := Init(resolved, logDir); err != nil {
+		return "", resolved, fmt.Errorf("initialize MaaFramework from %s: %w", resolved, err)
+	}
+	// Release right away: the caller only wanted the version, and leaving the
+	// library loaded would make the next command in the same process—tests run
+	// several—believe MaaFramework is still initialized.
+	defer func() {
+		_ = maa.Release()
+		loaded.Store(false)
+	}()
+	return maa.Version(), resolved, nil
+}
+
 // ResolveLibDir returns the directory to load MaaFramework from.
 //
 // An explicit path always wins. Otherwise the libraries embedded in this build

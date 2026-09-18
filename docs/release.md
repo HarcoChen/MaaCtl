@@ -47,7 +47,7 @@ git tag -a v0.1.2-beta.1 -m "MaaCtl v0.1.2-beta.1" && git push origin v0.1.2-bet
 
 MaaFramework 的版本只钉在 `release.yml` 的 `MAAFW_VERSION` 环境变量里（六个平台共用）：升级时
 只改这一行，工作流会把它传给 `fetch_maafw.py`；项目代码与打包器都不感知版本，运行库版本由
-`maactl selfcheck` 从加载后的库里读出（`build_release.py` 就是用它验证产物的）。
+`maactl -v` / `maactl selfcheck` 从加载后的库里读出（`build_release.py` 就是用它验证产物的）。
 
 ## 发布到 npm
 

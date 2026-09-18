@@ -8,6 +8,7 @@ import (
 	"maactl/internal/clientconfig"
 	"maactl/internal/help"
 	"maactl/internal/i18n"
+	"maactl/internal/maafw"
 	"maactl/internal/pi"
 
 	"github.com/spf13/cobra"
@@ -41,9 +42,12 @@ func NewRootCommand(version string) *cobra.Command {
 	cobra.EnableCommandSorting = false
 	var global GlobalOptions
 	root := &cobra.Command{
-		Use:     "maactl",
-		Version: version,
-		Short:   i18n.Text("MaaFramework and ProjectInterface command-line client", "MaaFramework 与 ProjectInterface 命令行客户端"),
+		Use: "maactl",
+		// No `Version` field: cobra prints that value before any hook runs, and the
+		// version line ends with the MaaFramework version, which can only be read
+		// after the runtime is loaded—and loading it honors --lib-dir, which is
+		// only parsed by then. `-v`/`--version` is therefore answered in Run below.
+		Short: i18n.Text("MaaFramework and ProjectInterface command-line client", "MaaFramework 与 ProjectInterface 命令行客户端"),
 		Long: i18n.Text(`MaaCtl loads ProjectInterface v2 projects, inspects MaaFramework resources,
 and runs Pipeline tasks.
 
@@ -58,7 +62,12 @@ device 列出设备与窗口，run 执行任务，config 显示客户端配置�
   maactl run -t 签到 -if D:\01_Projects\github\MaaMio -sa 30s
   maactl device adb -j`,
 		SilenceErrors: true, SilenceUsage: true, Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if showVersion, _ := cmd.Flags().GetBool("version"); showVersion {
+				return printVersion(cmd, version, &global)
+			}
+			return cmd.Help()
+		},
 	}
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return withExitCode(ExitUsage, err) })
 	root.PersistentFlags().StringVarP(&global.InterfacePath, "interface", "f", "", i18n.Text("ProjectInterface file or project directory (default: ./interface.json)", "ProjectInterface 文件或项目目录（默认：./interface.json）"))
@@ -80,7 +89,7 @@ device 列出设备与窗口，run 执行任务，config 显示客户端配置�
 		newDeviceCommand(&global),
 		newRunCommand(&global),
 		newConfigCommand(&global),
-		newVersionCommand(version),
+		newVersionCommand(version, &global),
 		newSelfCheckCommand(&global),
 	)
 	root.AddCommand(newLegacyDeviceCommands(&global)...)
@@ -153,19 +162,41 @@ func (g *GlobalOptions) LoadConfig(project *pi.Loaded) (*clientconfig.Config, st
 	return config, path, nil
 }
 
+// runtimeVersion is the seam tests use to answer the version line without a
+// MaaFramework release on disk; production always loads the real runtime.
+var runtimeVersion = maafw.RuntimeVersion
+
+// printVersion writes the version line: maactl's own version, plus the
+// MaaFramework version the runtime reports when one can be loaded.
+//
+// The runtime part costs a load—there is no build-time stamp to fall back on—so
+// a machine without a usable runtime still gets an answer, and --verbose says
+// why the runtime part is missing. `selfcheck` is the command that treats such
+// problems as failures.
+func printVersion(cmd *cobra.Command, version string, global *GlobalOptions) error {
+	line := "maactl version " + version
+	runtime, _, err := runtimeVersion(global.LibDir, global.LogDir)
+	switch {
+	case err != nil:
+		if global.Verbose {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: cannot read the MaaFramework version: %v\n", err)
+		}
+	case strings.TrimSpace(runtime) != "":
+		line += " (MaaFramework " + strings.TrimSpace(runtime) + ")"
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), line)
+	return nil
+}
+
 // newVersionCommand prints the version, mirroring the root --version flag.
-// It deliberately reports only maactl's own version: the MaaFramework version
-// belongs to the runtime, not to the build, and reading it would mean loading
-// the libraries—which `selfcheck` does.
-func newVersionCommand(version string) *cobra.Command {
+func newVersionCommand(version string, global *GlobalOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:     "version",
 		Aliases: []string{"ver"},
 		Short:   i18n.Text("Print version information", "显示版本信息"),
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fmt.Fprintln(cmd.OutOrStdout(), "maactl version "+version)
-			return nil
+			return printVersion(cmd, version, global)
 		},
 	}
 }

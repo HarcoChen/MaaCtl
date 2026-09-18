@@ -3,6 +3,8 @@ package tests
 import (
 	"bytes"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -117,6 +119,49 @@ func TestVersionCommand(t *testing.T) {
 		t.Errorf("version alias output differs:\n%s\n%s", alias, out)
 	}
 }
+
+// runtimeVersionIn extracts the version from a "(MaaFramework vX.Y.Z)" suffix.
+func runtimeVersionIn(out string) (string, bool) {
+	const marker = "(MaaFramework "
+	start := strings.Index(out, marker)
+	if start < 0 {
+		return "", false
+	}
+	rest := out[start+len(marker):]
+	end := strings.Index(rest, ")")
+	if end < 0 {
+		return "", false
+	}
+	return rest[:end], true
+}
+
+// TestVersionReadsTheMaaFrameworkRuntime pins the whole point of the version
+// line: it reports the version the loaded libraries report about themselves,
+// which is why -v has to work where a runtime exists and still answer where it
+// does not.
+func TestVersionReadsTheMaaFrameworkRuntime(t *testing.T) {
+	libDir := filepath.Join("..", "maafw", "bin")
+	if _, err := os.Stat(libDir); err != nil {
+		out := mustHelp(t, "-v")
+		if strings.Contains(out, "MaaFramework") {
+			t.Fatalf("-v claims a runtime without one: %q", out)
+		}
+		t.Skipf("no MaaFramework runtime to load: %v", err)
+	}
+	for _, args := range [][]string{{"-v", "-l", libDir}, {"version", "-l", libDir}} {
+		out := mustHelp(t, args...)
+		version, ok := runtimeVersionIn(out)
+		if !ok {
+			t.Fatalf("%v did not report a MaaFramework version: %q", args, out)
+		}
+		if !versionPattern.MatchString(version) {
+			t.Errorf("%v reported %q, which is not a MaaFramework version: %q", args, version, out)
+		}
+	}
+}
+
+// versionPattern accepts the tags MaaFramework publishes, e.g. v5.13.1.
+var versionPattern = regexp.MustCompile(`^v\d+\.\d+(\.\d+)?`)
 
 func TestHelpCommandMatchesDashH(t *testing.T) {
 	for _, parts := range [][]string{

@@ -12,8 +12,9 @@ embeddable, so builds behave the same before and after a payload exists.
 
 The payload is a plain copy of a runtime directory: no version, no platform, no
 metadata. maactl reports the version the loaded libraries report about
-themselves (`maactl selfcheck`), and the runtime files are what decides which
-platform the build works on.
+themselves (`maactl -v` loads them to answer, `maactl selfcheck` shows where
+they came from), and the runtime files are what decides which platform the build
+works on.
 
 The runtime has to be on disk first: `tools/packmaafw` never downloads anything.
 
